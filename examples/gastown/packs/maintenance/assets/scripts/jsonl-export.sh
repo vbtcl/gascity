@@ -49,7 +49,8 @@ scrub_exported_issues() {
         if (.rows? | type) == "array" then
             .rows |= map(
                 select(
-                    ((.title // "") | test("^(Test Issue|test_)") | not) and
+                    ((.title // "") | test("^(Test Issue|test_|gc:|order:)") | not) and
+                    ((.issue_type // "") | IN("message", "event", "wisp", "agent") | not) and
                     (
                         (
                             (.id // "") == "bd-1" or
@@ -634,7 +635,7 @@ fi
 # Build scrub filter for the issues table.
 SCRUB_FILTER=""
 if [ "$SCRUB" = "true" ]; then
-    SCRUB_FILTER="WHERE issue_type NOT IN ('message', 'event', 'wisp', 'agent') AND title NOT LIKE 'gc:%'"
+    SCRUB_FILTER="WHERE issue_type NOT IN ('message', 'event', 'wisp', 'agent') AND title NOT LIKE 'gc:%' AND title NOT LIKE 'order:%'"
 fi
 
 TOTAL_EXPORTED=0

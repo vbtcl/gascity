@@ -3700,12 +3700,15 @@ func TestJsonlExportScrubTrueFiltersRowsWithoutDroppingWholePayload(t *testing.T
 	archiveRepo := filepath.Join(cityDir, "archive")
 
 	initSeedArchive(t, archiveRepo, 12)
-	rows := make([]string, 0, 13)
+	rows := make([]string, 0, 16)
 	rows = append(rows, `{"id":"bd-100","title":"real-leading-prefix"}`)
 	for i := 1; i < 12; i++ {
 		rows = append(rows, fmt.Sprintf(`{"id":"prod-%d","title":"real-%d"}`, i, i))
 	}
 	rows = append(rows, `{"id":"prod-test","title":"Test Issue 99"}`)
+	rows = append(rows, `{"id":"prod-order","issue_type":"task","title":"order:gate-sweep:rig:partcl"}`)
+	rows = append(rows, `{"id":"prod-gc","issue_type":"task","title":"gc:maintenance"}`)
+	rows = append(rows, `{"id":"prod-message","issue_type":"message","title":"operator mail"}`)
 	writeIssueRowsDoltStub(t, binDir, rows)
 	writeJsonlExportGCStub(t, binDir)
 
@@ -3735,6 +3738,11 @@ func TestJsonlExportScrubTrueFiltersRowsWithoutDroppingWholePayload(t *testing.T
 	if strings.Contains(string(exported), "Test Issue 99") {
 		t.Fatalf("expected scrubbed export to remove the test row, got:\n%s", exported)
 	}
+	for _, forbidden := range []string{"prod-order", "prod-gc", "prod-message"} {
+		if strings.Contains(string(exported), forbidden) {
+			t.Fatalf("expected scrubbed export to remove generated infrastructure row %q, got:\n%s", forbidden, exported)
+		}
+	}
 
 	legacyExported, err := os.ReadFile(filepath.Join(archiveRepo, "beads.jsonl"))
 	if err != nil {
@@ -3748,6 +3756,11 @@ func TestJsonlExportScrubTrueFiltersRowsWithoutDroppingWholePayload(t *testing.T
 	}
 	if strings.Contains(string(legacyExported), "Test Issue 99") {
 		t.Fatalf("expected legacy flat export to remove the test row, got:\n%s", legacyExported)
+	}
+	for _, forbidden := range []string{"prod-order", "prod-gc", "prod-message"} {
+		if strings.Contains(string(legacyExported), forbidden) {
+			t.Fatalf("expected legacy flat export to remove generated infrastructure row %q, got:\n%s", forbidden, legacyExported)
+		}
 	}
 
 	gcData, err := os.ReadFile(gcLog)
