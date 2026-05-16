@@ -4935,6 +4935,8 @@ func TestInitFromSkipForSource(t *testing.T) {
 		{name: "packv2 preserves user-managed symlink relayout", srcDir: v2ManagedDir, relPath: "scripts", isDir: true, want: false},
 		{name: "packv2 preserves foreign symlink tree", srcDir: v2ForeignDir, relPath: "scripts", isDir: true, want: false},
 		{name: "packv2 still skips .gc", srcDir: v2ShimDir, relPath: ".gc", isDir: true, want: true},
+		{name: "packv2 still skips .beads", srcDir: v2ShimDir, relPath: ".beads", isDir: true, want: true},
+		{name: "packv2 still skips .codex", srcDir: v2ShimDir, relPath: ".codex", isDir: true, want: true},
 		{name: "packv2 still skips tests", srcDir: v2ShimDir, relPath: "helper_test.go", isDir: false, want: true},
 	}
 	for _, tt := range tests {

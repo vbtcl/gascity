@@ -25,7 +25,14 @@ func TestShippedExamplesDoNotHardcodeShortRoutedToPools(t *testing.T) {
 		if err != nil {
 			return err
 		}
-		if entry.IsDir() || strings.HasSuffix(path, "_test.go") {
+		if entry.IsDir() {
+			switch entry.Name() {
+			case ".beads", ".codex", ".gc":
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if strings.HasSuffix(path, "_test.go") {
 			return nil
 		}
 		data, err := os.ReadFile(path)

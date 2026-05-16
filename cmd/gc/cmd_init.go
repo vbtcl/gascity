@@ -1060,10 +1060,11 @@ func writeInitAgentPrompts(fs fsys.FS, cityPath string, cfg *config.City, stderr
 }
 
 // initFromSkip returns true for files and directories that should be excluded
-// when copying a city template directory via --from. Skips .gc/ runtime state.
+// when copying a city template directory via --from. Skips runtime state.
 func initFromSkip(relPath string, isDir bool) bool {
 	top, _, _ := strings.Cut(relPath, string(filepath.Separator))
-	if top == ".gc" {
+	switch top {
+	case ".beads", ".codex", ".gc":
 		return true
 	}
 	if !isDir && strings.HasSuffix(filepath.Base(relPath), "_test.go") {

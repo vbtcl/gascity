@@ -47,6 +47,24 @@ metadata_db() {
   grep -o '"dolt_database"[[:space:]]*:[[:space:]]*"[^"]*"' "$meta" 2>/dev/null | sed 's/.*: *"//;s/"$//' || true
 }
 
+dolt_sql_server_config_path() (
+  cmd="$1"
+  printf '%s\n' "$cmd" \
+    | sed -n 's/.*--config[= ][ ]*\([^ ]*\).*/\1/p' \
+    | head -1
+)
+
+is_other_city_managed_dolt_server() (
+  cmd="$1"
+  config_path=$(dolt_sql_server_config_path "$cmd")
+  [ -n "$config_path" ] || return 1
+  case "$config_path" in
+    */.gc/runtime/packs/dolt/dolt-config.yaml) ;;
+    *) return 1 ;;
+  esac
+  ! same_path "$config_path" "$DOLT_STATE_DIR/dolt-config.yaml"
+)
+
 json_output=false
 data_dir="$DOLT_DATA_DIR"
 
@@ -268,6 +286,9 @@ if [ "${GC_HEALTH_SKIP_ZOMBIE_SCAN:-0}" != "1" ]; then
       *sql-server*) ;;
       *) continue ;;
     esac
+    if is_other_city_managed_dolt_server "$cmd"; then
+      continue
+    fi
     zombie_count=$((zombie_count + 1))
     zombie_pids="$zombie_pids $p"
   done
