@@ -1945,6 +1945,32 @@ exit 0
 	}
 }
 
+func TestGcBdTimesOutHungBdCommand(t *testing.T) {
+	const hungBdScript = `#!/bin/sh
+echo "partial bd output"
+sleep 5
+`
+	silentFallbackTestSetup(t, hungBdScript)
+
+	oldTimeout := gcBdCommandTimeout
+	gcBdCommandTimeout = 50 * time.Millisecond
+	t.Cleanup(func() { gcBdCommandTimeout = oldTimeout })
+
+	var stdout, stderr bytes.Buffer
+	start := time.Now()
+	got := doBd([]string{"show", "demo-abc"}, &stdout, &stderr)
+	if got != bdCommandTimeoutExitCode {
+		t.Fatalf("doBd(show) = %d, want timeout exit %d; stderr=%q",
+			got, bdCommandTimeoutExitCode, stderr.String())
+	}
+	if elapsed := time.Since(start); elapsed > time.Second {
+		t.Fatalf("doBd(show) timeout elapsed = %s, want under 1s", elapsed)
+	}
+	if !strings.Contains(stderr.String(), "timed out after") {
+		t.Fatalf("stderr = %q, want timeout diagnostic", stderr.String())
+	}
+}
+
 // TestGcBdProcessExitCodeMatchesSilentFallbackContract pins the process-
 // level exit code contract that the bdSilentFallbackExitCode = 4 doc
 // comment promises operators and CI. PR #2327 review found the previous

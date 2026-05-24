@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -8,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/gastownhall/gascity/internal/config"
 	"github.com/spf13/cobra"
@@ -21,12 +23,18 @@ import (
 // (gastownhall/gascity#2079) because both subcommands flow through doBd.
 const bdSilentFallbackExitCode = 4
 
+// bdCommandTimeoutExitCode follows the conventional timeout(1) exit code so
+// operators can distinguish a wedged bd subprocess from a normal bd failure.
+const bdCommandTimeoutExitCode = 124
+
 // bdStderrScanLimit caps how much of bd's stderr gc retains to scan for the
 // silent-fallback marker. bd emits the marker pair while opening the store —
 // before it runs the subcommand — so the marker, when present, always lands
 // within the first chunk of stderr. Capping the retained prefix keeps memory
 // bounded for bd subcommands that stream large stderr output.
 const bdStderrScanLimit = 64 << 10 // 64 KiB
+
+var gcBdCommandTimeout = 120 * time.Second
 
 // headLimitedWriter retains only the first limit bytes written to it and
 // discards the rest, so scanning bd's stderr for the silent-fallback marker
@@ -175,7 +183,11 @@ func doBd(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 
-	cmd := exec.Command(bdPath, bdArgs...)
+	ctx, cancel := context.WithTimeout(context.Background(), gcBdCommandTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, bdPath, bdArgs...)
+	cmd.WaitDelay = 2 * time.Second
+	prepareProviderOpCommand(cmd)
 	cmd.Dir = target.ScopeRoot
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = stdout
@@ -194,6 +206,10 @@ func doBd(args []string, stdout, stderr io.Writer) int {
 	cmd.Env = workQueryEnvForDir(env, cmd.Dir)
 
 	runErr := cmd.Run()
+	if ctx.Err() == context.DeadlineExceeded {
+		fmt.Fprintf(stderr, "gc bd: bd command timed out after %s\n", gcBdCommandTimeout) //nolint:errcheck // best-effort stderr
+		return bdCommandTimeoutExitCode
+	}
 
 	if runErr != nil {
 		var exitErr *exec.ExitError
