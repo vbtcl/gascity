@@ -781,6 +781,61 @@ func TestBuildDesiredStateDefaultScaleCheckMissingRigStoreReportsZeroDemand(t *t
 	}
 }
 
+func TestBuildDesiredStateDefaultScaleCheckCountsRigStoreRoutedWork(t *testing.T) {
+	cityPath := t.TempDir()
+	rigPath := filepath.Join(cityPath, "riga")
+	if err := os.MkdirAll(rigPath, 0o755); err != nil {
+		t.Fatalf("create rig dir: %v", err)
+	}
+	cityStore := beads.NewMemStore()
+	rigStore := beads.NewMemStore()
+	if _, err := rigStore.Create(beads.Bead{
+		Title:  "rig-owned routed work",
+		Type:   "task",
+		Status: "open",
+		Metadata: map[string]string{
+			"gc.routed_to": "riga/worker",
+		},
+	}); err != nil {
+		t.Fatalf("create rig routed bead: %v", err)
+	}
+	cfg := &config.City{
+		Workspace: config.Workspace{Name: "test-city"},
+		Rigs: []config.Rig{{
+			Name: "riga",
+			Path: rigPath,
+		}},
+		Agents: []config.Agent{{
+			Name:              "worker",
+			Dir:               "riga",
+			StartCommand:      "true",
+			MinActiveSessions: intPtr(0),
+			MaxActiveSessions: intPtr(5),
+		}},
+	}
+
+	got := buildDesiredStateWithSessionBeads(
+		"test-city", cityPath, time.Now().UTC(), cfg, runtime.NewFake(),
+		cityStore, map[string]beads.Store{"riga": rigStore}, nil, nil, io.Discard,
+	)
+
+	if len(got.AssignedWorkBeads) != 0 {
+		t.Fatalf("AssignedWorkBeads = %d, want 0 for unassigned routed work", len(got.AssignedWorkBeads))
+	}
+	if demand := got.ScaleCheckCounts["riga/worker"]; demand != 1 {
+		t.Fatalf("ScaleCheckCounts[riga/worker] = %d, want 1 from rig store routed work", demand)
+	}
+	desired := 0
+	for _, tp := range got.State {
+		if tp.TemplateName == "riga/worker" {
+			desired++
+		}
+	}
+	if desired != 1 {
+		t.Fatalf("desired riga/worker sessions = %d, want 1", desired)
+	}
+}
+
 func TestCollectAssignedWorkBeads_ExcludesRoutedToMetadataWithoutAssignee(t *testing.T) {
 	t.Parallel()
 	store := beads.NewMemStore()
