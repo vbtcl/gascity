@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/gastownhall/gascity/internal/config"
 	"github.com/spf13/cobra"
@@ -27,6 +28,11 @@ const bdSilentFallbackExitCode = 4
 // within the first chunk of stderr. Capping the retained prefix keeps memory
 // bounded for bd subcommands that stream large stderr output.
 const bdStderrScanLimit = 64 << 10 // 64 KiB
+
+// bdNoteCommentChunkLimit keeps fallback comment bodies safely below Dolt's
+// TEXT column limit while preserving large evidence bundles across multiple
+// structured comments.
+const bdNoteCommentChunkLimit = 60 << 10 // 60 KiB
 
 // headLimitedWriter retains only the first limit bytes written to it and
 // discards the rest, so scanning bd's stderr for the silent-fallback marker
@@ -49,6 +55,14 @@ func (w *headLimitedWriter) Write(p []byte) (int, error) {
 
 func (w *headLimitedWriter) String() string { return string(w.buf) }
 
+type bdOversizedNoteFallback struct {
+	beadID       string
+	noteText     string
+	retryArgs    []string
+	shouldRetry  bool
+	originalFlag string
+}
+
 func newBdCmd(stdout, stderr io.Writer) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "bd [bd-args...]",
@@ -64,7 +78,11 @@ All arguments after "gc bd" are forwarded to bd unchanged.
 
 gc bd forces BD_EXPORT_AUTO=false to prevent bd's git auto-export hook
 from wedging the wrapper after printing command output. If you need
-auto-export behavior, invoke bd directly.`,
+auto-export behavior, invoke bd directly.
+
+When upstream bd rejects a notes write because its audit event would exceed
+Dolt TEXT limits, gc bd retries any non-note update flags and stores the note
+body as chunked comments so operational evidence is not lost.`,
 		Example: `  gc bd --rig my-project list
   gc bd --rig my-project create "New task"
   gc bd show my-project-abc          # auto-detects rig from bead prefix
@@ -191,13 +209,21 @@ func doBd(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "gc bd: %v\n", err) //nolint:errcheck // best-effort stderr
 		return 1
 	}
-	cmd.Env = workQueryEnvForDir(env, cmd.Dir)
+	cmdEnv := workQueryEnvForDir(env, cmd.Dir)
+	cmd.Env = cmdEnv
 
 	runErr := cmd.Run()
 
 	if runErr != nil {
 		var exitErr *exec.ExitError
 		if errors.As(runErr, &exitErr) {
+			if fallback, ok := bdOversizedNoteFallbackForArgs(bdArgs, stderrScan.String()); ok {
+				code := runBdOversizedNoteFallback(bdPath, target.ScopeRoot, cmdEnv, fallback, stdout, stderr)
+				if code == 0 {
+					return 0
+				}
+				return code
+			}
 			return exitErr.ExitCode()
 		}
 		fmt.Fprintf(stderr, "gc bd: %v\n", runErr) //nolint:errcheck // best-effort stderr
@@ -222,6 +248,250 @@ func doBd(args []string, stdout, stderr io.Writer) int {
 	}
 
 	return 0
+}
+
+func bdOversizedNoteFallbackForArgs(args []string, bdOutput string) (bdOversizedNoteFallback, bool) {
+	if !bdOutputIndicatesOversizedEventValue(bdOutput) || len(args) == 0 {
+		return bdOversizedNoteFallback{}, false
+	}
+	switch args[0] {
+	case "update":
+		return parseBdUpdateOversizedNoteFallback(args)
+	case "note":
+		return parseBdNoteOversizedNoteFallback(args)
+	default:
+		return bdOversizedNoteFallback{}, false
+	}
+}
+
+func bdOutputIndicatesOversizedEventValue(output string) bool {
+	msg := strings.ToLower(output)
+	if !strings.Contains(msg, "old_value") && !strings.Contains(msg, "new_value") {
+		return false
+	}
+	return strings.Contains(msg, "too large") || strings.Contains(msg, "data too long")
+}
+
+func parseBdUpdateOversizedNoteFallback(args []string) (bdOversizedNoteFallback, bool) {
+	if len(args) < 2 || args[0] != "update" {
+		return bdOversizedNoteFallback{}, false
+	}
+
+	retryArgs := []string{"update"}
+	var ids []string
+	var noteText string
+	var originalFlag string
+	usesStdin := false
+
+	for i := 1; i < len(args); i++ {
+		arg := args[i]
+		if flag, value, ok := splitBdNoteFlag(arg); ok {
+			if originalFlag != "" {
+				return bdOversizedNoteFallback{}, false
+			}
+			originalFlag = flag
+			noteText = value
+			continue
+		}
+		if arg == "--notes" || arg == "--append-notes" {
+			if originalFlag != "" || i+1 >= len(args) {
+				return bdOversizedNoteFallback{}, false
+			}
+			originalFlag = arg
+			noteText = args[i+1]
+			i++
+			continue
+		}
+
+		retryArgs = append(retryArgs, arg)
+
+		if arg == "--stdin" {
+			usesStdin = true
+			continue
+		}
+		if strings.HasPrefix(arg, "--") {
+			name, hasInlineValue := bdLongFlagName(arg)
+			if hasInlineValue && (arg == "--body-file=-" || arg == "--description-file=-") {
+				usesStdin = true
+			}
+			if bdUpdateFlagTakesValue(name) && !hasInlineValue {
+				if i+1 >= len(args) {
+					return bdOversizedNoteFallback{}, false
+				}
+				value := args[i+1]
+				retryArgs = append(retryArgs, value)
+				if (name == "body-file" || name == "description-file") && value == "-" {
+					usesStdin = true
+				}
+				i++
+			}
+			continue
+		}
+		if strings.HasPrefix(arg, "-") && arg != "-" {
+			name := strings.TrimLeft(arg, "-")
+			if bdUpdateShortFlagTakesValue(name) {
+				if i+1 >= len(args) {
+					return bdOversizedNoteFallback{}, false
+				}
+				retryArgs = append(retryArgs, args[i+1])
+				i++
+			}
+			continue
+		}
+		ids = append(ids, arg)
+	}
+
+	if usesStdin || originalFlag == "" || noteText == "" || len(ids) != 1 {
+		return bdOversizedNoteFallback{}, false
+	}
+	return bdOversizedNoteFallback{
+		beadID:       ids[0],
+		noteText:     noteText,
+		retryArgs:    retryArgs,
+		shouldRetry:  bdUpdateArgsHaveMutation(retryArgs),
+		originalFlag: originalFlag,
+	}, true
+}
+
+func parseBdNoteOversizedNoteFallback(args []string) (bdOversizedNoteFallback, bool) {
+	if len(args) < 3 || args[0] != "note" || strings.HasPrefix(args[1], "-") {
+		return bdOversizedNoteFallback{}, false
+	}
+	for _, arg := range args[2:] {
+		if arg == "--stdin" || arg == "--file" || strings.HasPrefix(arg, "--file=") {
+			return bdOversizedNoteFallback{}, false
+		}
+	}
+	noteText := strings.Join(args[2:], " ")
+	if noteText == "" {
+		return bdOversizedNoteFallback{}, false
+	}
+	return bdOversizedNoteFallback{
+		beadID:       args[1],
+		noteText:     noteText,
+		originalFlag: "note",
+	}, true
+}
+
+func splitBdNoteFlag(arg string) (string, string, bool) {
+	for _, flag := range []string{"--notes=", "--append-notes="} {
+		if strings.HasPrefix(arg, flag) {
+			return strings.TrimSuffix(flag, "="), strings.TrimPrefix(arg, flag), true
+		}
+	}
+	return "", "", false
+}
+
+func bdLongFlagName(arg string) (string, bool) {
+	trimmed := strings.TrimPrefix(arg, "--")
+	name, _, hasValue := strings.Cut(trimmed, "=")
+	return name, hasValue
+}
+
+func bdUpdateFlagTakesValue(name string) bool {
+	switch name {
+	case "status", "priority", "title", "type", "assignee", "description", "body", "message",
+		"body-file", "description-file", "design", "design-file", "acceptance", "external-ref",
+		"spec-id", "acceptance-criteria", "estimate", "add-label", "remove-label", "set-labels",
+		"parent", "session", "due", "defer", "await-id", "metadata", "set-metadata", "unset-metadata":
+		return true
+	default:
+		return false
+	}
+}
+
+func bdUpdateShortFlagTakesValue(name string) bool {
+	switch name {
+	case "s", "a", "d", "m", "t", "e":
+		return true
+	default:
+		return false
+	}
+}
+
+func bdUpdateArgsHaveMutation(args []string) bool {
+	for _, arg := range args[1:] {
+		if strings.HasPrefix(arg, "--") {
+			name, _ := bdLongFlagName(arg)
+			switch name {
+			case "json", "help":
+				continue
+			default:
+				return true
+			}
+		}
+		if strings.HasPrefix(arg, "-") && arg != "-" {
+			name := strings.TrimLeft(arg, "-")
+			if name != "h" {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func runBdOversizedNoteFallback(bdPath, dir string, env []string, fallback bdOversizedNoteFallback, stdout, stderr io.Writer) int {
+	fmt.Fprintf(stderr, "gc bd: bd could not write %s because Dolt rejected the audit old_value/new_value size; ", fallback.originalFlag) //nolint:errcheck // best-effort stderr
+	fmt.Fprintln(stderr, "retrying non-note updates and storing the note as chunked comments.")                                           //nolint:errcheck // best-effort stderr
+	if fallback.shouldRetry {
+		if code := runBdSubcommand(bdPath, fallback.retryArgs, dir, env, nil, stdout, stderr); code != 0 {
+			return code
+		}
+	}
+	chunks := chunkStringByBytes(fallback.noteText, bdNoteCommentChunkLimit)
+	for _, chunk := range chunks {
+		if code := runBdSubcommand(bdPath, []string{"comment", fallback.beadID, "--stdin"}, dir, env, strings.NewReader(chunk), stdout, stderr); code != 0 {
+			return code
+		}
+	}
+	return 0
+}
+
+func runBdSubcommand(bdPath string, args []string, dir string, env []string, stdin io.Reader, stdout, stderr io.Writer) int {
+	cmd := exec.Command(bdPath, args...)
+	cmd.Dir = dir
+	if stdin != nil {
+		cmd.Stdin = stdin
+	} else {
+		cmd.Stdin = os.Stdin
+	}
+	cmd.Stdout = stdout
+	cmd.Stderr = stderr
+	cmd.Env = env
+	if err := cmd.Run(); err != nil {
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) {
+			return exitErr.ExitCode()
+		}
+		fmt.Fprintf(stderr, "gc bd: %v\n", err) //nolint:errcheck // best-effort stderr
+		return 1
+	}
+	return 0
+}
+
+func chunkStringByBytes(s string, limit int) []string {
+	if limit <= 0 || len(s) <= limit {
+		return []string{s}
+	}
+	chunks := make([]string, 0, (len(s)/limit)+1)
+	start := 0
+	size := 0
+	for idx, r := range s {
+		runeSize := utf8.RuneLen(r)
+		if runeSize < 0 {
+			runeSize = 1
+		}
+		if size > 0 && size+runeSize > limit {
+			chunks = append(chunks, s[start:idx])
+			start = idx
+			size = 0
+		}
+		size += runeSize
+	}
+	if start < len(s) {
+		chunks = append(chunks, s[start:])
+	}
+	return chunks
 }
 
 func resolveBdCity(cityName string) (string, error) {

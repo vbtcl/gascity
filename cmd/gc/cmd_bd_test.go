@@ -1900,6 +1900,207 @@ func TestGcBdSurfacesSilentFallbackAsLoudError_UpdatePath(t *testing.T) {
 	}
 }
 
+// TestGcBdOversizedAppendNotesFallsBackToComments pins the live
+// ga-ij5fhag failure mode: a long-lived tracking bead can grow large enough
+// that bd rejects the audit event for appending notes with an old_value /
+// new_value TEXT overflow. gc bd should preserve the evidence by writing it
+// as a comment instead of returning a hard failure to the operator.
+func TestGcBdOversizedAppendNotesFallsBackToComments(t *testing.T) {
+	const fakeBdScript = `#!/bin/sh
+set -eu
+case "$1" in
+  update)
+    printf 'update:%s\n' "$*" >> "$CAPTURE_PATH"
+    echo "Error updating $2: failed to record event: old_value column too large" >&2
+    exit 2
+    ;;
+  comment)
+    printf 'comment:%s:' "$*" >> "$CAPTURE_PATH"
+    cat >> "$CAPTURE_PATH"
+    printf '\n' >> "$CAPTURE_PATH"
+    echo "Comment added to $2"
+    exit 0
+    ;;
+  *)
+    echo "unexpected bd command: $*" >&2
+    exit 64
+    ;;
+esac
+`
+	silentFallbackTestSetup(t, fakeBdScript)
+	capture := filepath.Join(t.TempDir(), "bd-calls.log")
+	t.Setenv("CAPTURE_PATH", capture)
+
+	var stdout, stderr bytes.Buffer
+	got := doBd([]string{"update", "demo-abc", "--append-notes", "doctor evidence"}, &stdout, &stderr)
+	if got != 0 {
+		t.Fatalf("doBd(update --append-notes) = %d, want 0; stdout=%q stderr=%q", got, stdout.String(), stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "Comment added to demo-abc") {
+		t.Fatalf("stdout missing comment fallback success; stdout=%q", stdout.String())
+	}
+	if !strings.Contains(stderr.String(), "old_value column too large") {
+		t.Fatalf("stderr missing original bd failure; stderr=%q", stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "storing the note as chunked comments") {
+		t.Fatalf("stderr missing gc bd fallback warning; stderr=%q", stderr.String())
+	}
+	data, err := os.ReadFile(capture)
+	if err != nil {
+		t.Fatal(err)
+	}
+	log := string(data)
+	if !strings.Contains(log, "update:update demo-abc --append-notes doctor evidence") {
+		t.Fatalf("capture missing original update call:\n%s", log)
+	}
+	if !strings.Contains(log, "comment:comment demo-abc --stdin:doctor evidence") {
+		t.Fatalf("capture missing comment fallback with evidence body:\n%s", log)
+	}
+}
+
+// TestGcBdOversizedAppendNotesRetriesNonNoteMutationsBeforeComment ensures
+// the overflow fallback does not silently drop status/metadata changes bundled
+// with a failed note append. The retry removes only the note flag, then stores
+// the note body as a comment.
+func TestGcBdOversizedAppendNotesRetriesNonNoteMutationsBeforeComment(t *testing.T) {
+	const fakeBdScript = `#!/bin/sh
+set -eu
+case "$1" in
+  update)
+    printf 'update:%s\n' "$*" >> "$CAPTURE_PATH"
+    for arg in "$@"; do
+      if [ "$arg" = "--append-notes" ]; then
+        echo "Error updating $2: failed to record event: new_value column too large" >&2
+        exit 2
+      fi
+    done
+    exit 0
+    ;;
+  comment)
+    printf 'comment:%s:' "$*" >> "$CAPTURE_PATH"
+    cat >> "$CAPTURE_PATH"
+    printf '\n' >> "$CAPTURE_PATH"
+    exit 0
+    ;;
+  *)
+    echo "unexpected bd command: $*" >&2
+    exit 64
+    ;;
+esac
+`
+	silentFallbackTestSetup(t, fakeBdScript)
+	capture := filepath.Join(t.TempDir(), "bd-calls.log")
+	t.Setenv("CAPTURE_PATH", capture)
+
+	var stdout, stderr bytes.Buffer
+	got := doBd([]string{"update", "demo-abc", "--status", "open", "--append-notes", "doctor evidence", "--set-metadata", "latest_evidence=/tmp/dolt-hang-1-*"}, &stdout, &stderr)
+	if got != 0 {
+		t.Fatalf("doBd(update with metadata + notes) = %d, want 0; stdout=%q stderr=%q", got, stdout.String(), stderr.String())
+	}
+	data, err := os.ReadFile(capture)
+	if err != nil {
+		t.Fatal(err)
+	}
+	log := string(data)
+	wantRetry := "update:update demo-abc --status open --set-metadata latest_evidence=/tmp/dolt-hang-1-*"
+	if !strings.Contains(log, wantRetry) {
+		t.Fatalf("capture missing retry without note flag %q:\n%s", wantRetry, log)
+	}
+	if !strings.Contains(log, "comment:comment demo-abc --stdin:doctor evidence") {
+		t.Fatalf("capture missing comment fallback:\n%s", log)
+	}
+}
+
+func TestGcBdOversizedNonNoteUpdatePreservesBdExit(t *testing.T) {
+	const fakeBdScript = `#!/bin/sh
+echo "Error updating $2: failed to record event: old_value column too large" >&2
+exit 7
+`
+	silentFallbackTestSetup(t, fakeBdScript)
+
+	var stdout, stderr bytes.Buffer
+	got := doBd([]string{"update", "demo-abc", "--set-metadata", "k=v"}, &stdout, &stderr)
+	if got != 7 {
+		t.Fatalf("doBd(non-note update) = %d, want preserved bd exit 7; stderr=%q", got, stderr.String())
+	}
+	if strings.Contains(stderr.String(), "storing the note as chunked comments") {
+		t.Fatalf("non-note update triggered note fallback; stderr=%q", stderr.String())
+	}
+}
+
+func TestGcBdOversizedNoteCommandFallsBackToComments(t *testing.T) {
+	const fakeBdScript = `#!/bin/sh
+set -eu
+case "$1" in
+  note)
+    printf 'note:%s\n' "$*" >> "$CAPTURE_PATH"
+    echo "Error updating $2: failed to record event: old_value column too large" >&2
+    exit 2
+    ;;
+  comment)
+    printf 'comment:%s:' "$*" >> "$CAPTURE_PATH"
+    cat >> "$CAPTURE_PATH"
+    printf '\n' >> "$CAPTURE_PATH"
+    exit 0
+    ;;
+  *)
+    echo "unexpected bd command: $*" >&2
+    exit 64
+    ;;
+esac
+`
+	silentFallbackTestSetup(t, fakeBdScript)
+	capture := filepath.Join(t.TempDir(), "bd-calls.log")
+	t.Setenv("CAPTURE_PATH", capture)
+
+	var stdout, stderr bytes.Buffer
+	got := doBd([]string{"note", "demo-abc", "doctor", "evidence"}, &stdout, &stderr)
+	if got != 0 {
+		t.Fatalf("doBd(note) = %d, want 0; stdout=%q stderr=%q", got, stdout.String(), stderr.String())
+	}
+	data, err := os.ReadFile(capture)
+	if err != nil {
+		t.Fatal(err)
+	}
+	log := string(data)
+	if !strings.Contains(log, "note:note demo-abc doctor evidence") {
+		t.Fatalf("capture missing original note call:\n%s", log)
+	}
+	if !strings.Contains(log, "comment:comment demo-abc --stdin:doctor evidence") {
+		t.Fatalf("capture missing comment fallback:\n%s", log)
+	}
+}
+
+func TestChunkStringByBytesSplitsLargeEvidence(t *testing.T) {
+	input := strings.Repeat("x", bdNoteCommentChunkLimit+3)
+	got := chunkStringByBytes(input, bdNoteCommentChunkLimit)
+	if len(got) != 2 {
+		t.Fatalf("len(chunks) = %d, want 2", len(got))
+	}
+	if len(got[0]) != bdNoteCommentChunkLimit {
+		t.Fatalf("first chunk len = %d, want %d", len(got[0]), bdNoteCommentChunkLimit)
+	}
+	if got[1] != "xxx" {
+		t.Fatalf("second chunk = %q, want %q", got[1], "xxx")
+	}
+	if strings.Join(got, "") != input {
+		t.Fatal("chunks did not preserve input")
+	}
+}
+
+func TestChunkStringByBytesDoesNotSplitMultibyteRune(t *testing.T) {
+	got := chunkStringByBytes("aaébb", 3)
+	if want := []string{"aa", "éb", "b"}; len(got) != len(want) {
+		t.Fatalf("chunks = %#v, want %#v", got, want)
+	} else {
+		for i := range want {
+			if got[i] != want[i] {
+				t.Fatalf("chunks = %#v, want %#v", got, want)
+			}
+		}
+	}
+}
+
 // TestGcBdSurfacesSilentFallbackAsLoudError_ClosePath pins the #2079 half of
 // the bd-write-persistence quad: bd close goes through the same doBd
 // handoff, so the silent-fallback detection must fire identically. Pre-fix,

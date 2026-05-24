@@ -256,6 +256,10 @@ gc bd forces BD_EXPORT_AUTO=false to prevent bd's git auto-export hook
 from wedging the wrapper after printing command output. If you need
 auto-export behavior, invoke bd directly.
 
+When upstream bd rejects a notes write because its audit event would exceed
+Dolt TEXT limits, gc bd retries any non-note update flags and stores the note
+body as chunked comments so operational evidence is not lost.
+
 ```
 gc bd [bd-args...]
 ```
