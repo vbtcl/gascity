@@ -56,6 +56,99 @@ func TestV2RoutedToNamespaceCheckWarnsOnShortBoundRoutes(t *testing.T) {
 	}
 }
 
+func TestV2RoutedToNamespaceCheckFixRewritesShortBoundRoutes(t *testing.T) {
+	cityDir := t.TempDir()
+	rigDir := t.TempDir()
+	cfg := &config.City{
+		Agents: []config.Agent{
+			{Name: "dog", BindingName: "gastown"},
+			{Name: "polecat", Dir: "repo", BindingName: "gastown"},
+		},
+		Rigs: []config.Rig{
+			{Name: "repo", Path: rigDir},
+		},
+	}
+	cityStore := beads.NewMemStoreFrom(0, []beads.Bead{
+		{ID: "CITY-1", Title: "warrant", Type: "task", Status: "open", Metadata: map[string]string{"gc.routed_to": "dog"}},
+	}, nil)
+	rigStore := beads.NewMemStoreFrom(0, []beads.Bead{
+		{ID: "RIG-1", Title: "work", Type: "task", Status: "open", Metadata: map[string]string{"gc.routed_to": "repo/polecat"}},
+	}, nil)
+	stores := map[string]beads.Store{
+		cityDir: cityStore,
+		rigDir:  rigStore,
+	}
+	check := newV2RoutedToNamespaceCheck(cfg, cityDir, func(path string) (beads.Store, error) {
+		store, ok := stores[path]
+		if !ok {
+			return nil, fmt.Errorf("unexpected store path %q", path)
+		}
+		return store, nil
+	})
+
+	if !check.CanFix() {
+		t.Fatal("CanFix = false, want true")
+	}
+	if err := check.Fix(&doctor.CheckContext{}); err != nil {
+		t.Fatalf("Fix: %v", err)
+	}
+
+	cityBead, err := cityStore.Get("CITY-1")
+	if err != nil {
+		t.Fatalf("get city bead: %v", err)
+	}
+	if got := cityBead.Metadata["gc.routed_to"]; got != "gastown.dog" {
+		t.Fatalf("city gc.routed_to = %q, want %q", got, "gastown.dog")
+	}
+	rigBead, err := rigStore.Get("RIG-1")
+	if err != nil {
+		t.Fatalf("get rig bead: %v", err)
+	}
+	if got := rigBead.Metadata["gc.routed_to"]; got != "repo/gastown.polecat" {
+		t.Fatalf("rig gc.routed_to = %q, want %q", got, "repo/gastown.polecat")
+	}
+
+	result := check.Run(&doctor.CheckContext{})
+	if result.Status != doctor.StatusOK {
+		t.Fatalf("status after fix = %v, want ok: %#v", result.Status, result)
+	}
+}
+
+func TestV2RoutedToNamespaceCheckFixRefusesAmbiguousShortRoute(t *testing.T) {
+	cityDir := t.TempDir()
+	cfg := &config.City{
+		Agents: []config.Agent{
+			{Name: "dog", BindingName: "gastown"},
+			{Name: "dog", BindingName: "maintenance"},
+		},
+	}
+	cityStore := beads.NewMemStoreFrom(0, []beads.Bead{
+		{ID: "CITY-1", Title: "warrant", Type: "task", Status: "open", Metadata: map[string]string{"gc.routed_to": "dog"}},
+	}, nil)
+	check := newV2RoutedToNamespaceCheck(cfg, cityDir, func(path string) (beads.Store, error) {
+		if path != cityDir {
+			return nil, fmt.Errorf("unexpected store path %q", path)
+		}
+		return cityStore, nil
+	})
+
+	err := check.Fix(&doctor.CheckContext{})
+	if err == nil {
+		t.Fatal("Fix returned nil, want ambiguity error")
+	}
+	want := `city bead CITY-1 has gc.routed_to="dog"; use one of gastown.dog, maintenance.dog`
+	if !strings.Contains(err.Error(), want) {
+		t.Fatalf("Fix error missing %q:\n%v", want, err)
+	}
+	cityBead, getErr := cityStore.Get("CITY-1")
+	if getErr != nil {
+		t.Fatalf("get city bead: %v", getErr)
+	}
+	if got := cityBead.Metadata["gc.routed_to"]; got != "dog" {
+		t.Fatalf("city gc.routed_to = %q, want unchanged dog", got)
+	}
+}
+
 func TestV2RoutedToNamespaceCheckUsesTargetedRouteQueries(t *testing.T) {
 	cityDir := t.TempDir()
 	cfg := &config.City{

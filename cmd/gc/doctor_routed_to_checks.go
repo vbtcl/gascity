@@ -16,15 +16,56 @@ type v2RoutedToNamespaceCheck struct {
 	newStore func(string) (beads.Store, error)
 }
 
+type routedToNamespaceFinding struct {
+	label      string
+	store      beads.Store
+	beadID     string
+	route      string
+	canonicals []string
+}
+
 func newV2RoutedToNamespaceCheck(cfg *config.City, cityPath string, newStore func(string) (beads.Store, error)) *v2RoutedToNamespaceCheck {
 	return &v2RoutedToNamespaceCheck{cfg: cfg, cityPath: cityPath, newStore: newStore}
 }
 
 func (c *v2RoutedToNamespaceCheck) Name() string { return "v2-routed-to-namespace" }
 
-func (c *v2RoutedToNamespaceCheck) CanFix() bool { return false }
+func (c *v2RoutedToNamespaceCheck) CanFix() bool { return true }
 
-func (c *v2RoutedToNamespaceCheck) Fix(_ *doctor.CheckContext) error { return nil }
+func (c *v2RoutedToNamespaceCheck) Fix(_ *doctor.CheckContext) error {
+	aliases := boundRoutedToAliases(c.cfg)
+	if len(aliases) == 0 {
+		return nil
+	}
+	findings, skipped := c.collectFindings(aliases)
+	if len(skipped) > 0 {
+		sort.Strings(skipped)
+		return fmt.Errorf("v2 routed_to namespace fix skipped scope(s): %s", strings.Join(skipped, "; "))
+	}
+	var ambiguous []string
+	for _, finding := range findings {
+		if len(finding.canonicals) != 1 {
+			ambiguous = append(ambiguous, finding.detail())
+		}
+	}
+	if len(ambiguous) > 0 {
+		sort.Strings(ambiguous)
+		return fmt.Errorf("v2 routed_to namespace fix needs a unique canonical target: %s", strings.Join(ambiguous, "; "))
+	}
+	sort.Slice(findings, func(i, j int) bool {
+		if findings[i].label != findings[j].label {
+			return findings[i].label < findings[j].label
+		}
+		return findings[i].beadID < findings[j].beadID
+	})
+	for _, finding := range findings {
+		canonical := finding.canonicals[0]
+		if err := finding.store.SetMetadataBatch(finding.beadID, map[string]string{"gc.routed_to": canonical}); err != nil {
+			return fmt.Errorf("%s bead %s: rewriting gc.routed_to from %q to %q: %w", finding.label, finding.beadID, finding.route, canonical, err)
+		}
+	}
+	return nil
+}
 
 func (c *v2RoutedToNamespaceCheck) Run(_ *doctor.CheckContext) *doctor.CheckResult {
 	aliases := boundRoutedToAliases(c.cfg)
@@ -32,7 +73,34 @@ func (c *v2RoutedToNamespaceCheck) Run(_ *doctor.CheckContext) *doctor.CheckResu
 		return okCheck(c.Name(), "no binding-qualified route targets configured")
 	}
 
-	var findings []string
+	findings, skipped := c.collectFindings(aliases)
+	details := routedToNamespaceDetails(findings)
+	details = append(details, skipped...)
+	sort.Strings(details)
+
+	if len(findings) == 0 && len(skipped) == 0 {
+		return okCheck(c.Name(), "no short-form gc.routed_to values targeting bound agents found")
+	}
+	if len(findings) == 0 {
+		return warnCheck(c.Name(),
+			fmt.Sprintf("v2 routed_to namespace check skipped %d scope(s)", len(skipped)),
+			"fix bead store access, then rerun gc doctor",
+			details)
+	}
+	if len(skipped) > 0 {
+		return warnCheck(c.Name(),
+			fmt.Sprintf("%d short-form gc.routed_to value(s) target bound PackV2 agents; %d scope(s) skipped", len(findings), len(skipped)),
+			"run `gc doctor --fix` to rewrite unambiguous gc.routed_to values, fix skipped store access, then rerun gc doctor",
+			details)
+	}
+	return warnCheck(c.Name(),
+		fmt.Sprintf("%d short-form gc.routed_to value(s) target bound PackV2 agents", len(findings)),
+		"run `gc doctor --fix` to rewrite unambiguous gc.routed_to values, then rerun gc doctor",
+		details)
+}
+
+func (c *v2RoutedToNamespaceCheck) collectFindings(aliases map[string][]string) ([]routedToNamespaceFinding, []string) {
+	var findings []routedToNamespaceFinding
 	var skipped []string
 	c.scanScope(&findings, &skipped, aliases, "city", c.cityPath)
 	if c.cfg != nil {
@@ -43,32 +111,25 @@ func (c *v2RoutedToNamespaceCheck) Run(_ *doctor.CheckContext) *doctor.CheckResu
 			c.scanScope(&findings, &skipped, aliases, "rig "+rig.Name, rig.Path)
 		}
 	}
-
-	if len(findings) == 0 && len(skipped) == 0 {
-		return okCheck(c.Name(), "no short-form gc.routed_to values targeting bound agents found")
-	}
-	details := append([]string{}, findings...)
-	details = append(details, skipped...)
-	sort.Strings(details)
-	if len(findings) == 0 {
-		return warnCheck(c.Name(),
-			fmt.Sprintf("v2 routed_to namespace check skipped %d scope(s)", len(skipped)),
-			"fix bead store access, then rerun gc doctor",
-			details)
-	}
-	if len(skipped) > 0 {
-		return warnCheck(c.Name(),
-			fmt.Sprintf("%d short-form gc.routed_to value(s) target bound PackV2 agents; %d scope(s) skipped", len(findings), len(skipped)),
-			"rewrite gc.routed_to to the binding-qualified agent name, fix skipped store access, then rerun gc doctor",
-			details)
-	}
-	return warnCheck(c.Name(),
-		fmt.Sprintf("%d short-form gc.routed_to value(s) target bound PackV2 agents", len(findings)),
-		"rewrite gc.routed_to to the binding-qualified agent name, then rerun gc doctor",
-		details)
+	return findings, skipped
 }
 
-func (c *v2RoutedToNamespaceCheck) scanScope(findings, skipped *[]string, aliases map[string][]string, label, path string) {
+func routedToNamespaceDetails(findings []routedToNamespaceFinding) []string {
+	details := make([]string, 0, len(findings))
+	for _, finding := range findings {
+		details = append(details, finding.detail())
+	}
+	return details
+}
+
+func (f routedToNamespaceFinding) detail() string {
+	if len(f.canonicals) == 1 {
+		return fmt.Sprintf("%s bead %s has gc.routed_to=%q; use %q", f.label, f.beadID, f.route, f.canonicals[0])
+	}
+	return fmt.Sprintf("%s bead %s has gc.routed_to=%q; use one of %s", f.label, f.beadID, f.route, strings.Join(f.canonicals, ", "))
+}
+
+func (c *v2RoutedToNamespaceCheck) scanScope(findings *[]routedToNamespaceFinding, skipped *[]string, aliases map[string][]string, label, path string) {
 	if c.newStore == nil || strings.TrimSpace(path) == "" {
 		return
 	}
@@ -96,12 +157,12 @@ func (c *v2RoutedToNamespaceCheck) scanScope(findings, skipped *[]string, aliase
 				continue
 			}
 			seen[bead.ID] = true
-			c.scanRoutedToBead(findings, aliases, label, bead)
+			c.scanRoutedToBead(findings, aliases, label, store, bead)
 		}
 	}
 }
 
-func (c *v2RoutedToNamespaceCheck) scanRoutedToBead(findings *[]string, aliases map[string][]string, label string, bead beads.Bead) {
+func (c *v2RoutedToNamespaceCheck) scanRoutedToBead(findings *[]routedToNamespaceFinding, aliases map[string][]string, label string, store beads.Store, bead beads.Bead) {
 	route := strings.TrimSpace(bead.Metadata["gc.routed_to"])
 	if route == "" {
 		return
@@ -110,12 +171,13 @@ func (c *v2RoutedToNamespaceCheck) scanRoutedToBead(findings *[]string, aliases 
 	if !ok {
 		return
 	}
-	switch len(canonicals) {
-	case 1:
-		*findings = append(*findings, fmt.Sprintf("%s bead %s has gc.routed_to=%q; use %q", label, bead.ID, route, canonicals[0]))
-	default:
-		*findings = append(*findings, fmt.Sprintf("%s bead %s has gc.routed_to=%q; use one of %s", label, bead.ID, route, strings.Join(canonicals, ", ")))
-	}
+	*findings = append(*findings, routedToNamespaceFinding{
+		label:      label,
+		store:      store,
+		beadID:     bead.ID,
+		route:      route,
+		canonicals: append([]string(nil), canonicals...),
+	})
 }
 
 func boundRoutedToAliases(cfg *config.City) map[string][]string {
