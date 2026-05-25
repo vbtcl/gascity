@@ -3766,6 +3766,68 @@ func TestRunWorkflowServeFollowUsesSweepFallback(t *testing.T) {
 	}
 }
 
+func TestRunWorkflowServeFollowSurvivesControlQueryError(t *testing.T) {
+	eventsDir := t.TempDir()
+	ep := newTestProvider(t, eventsDir)
+
+	prevList := workflowServeList
+	prevControl := controlDispatcherServe
+	prevProvider := workflowServeOpenEventsProvider
+	prevWait := workflowServeWaitForWake
+	t.Cleanup(func() {
+		workflowServeList = prevList
+		controlDispatcherServe = prevControl
+		workflowServeOpenEventsProvider = prevProvider
+		workflowServeWaitForWake = prevWait
+	})
+
+	workflowServeOpenEventsProvider = func(io.Writer) (events.Provider, error) {
+		return ep, nil
+	}
+
+	queryErr := errors.New("timed out after 30s")
+	listCalls := 0
+	workflowServeList = func(_, _ string, _ map[string]string) ([]hookBead, error) {
+		listCalls++
+		switch listCalls {
+		case 1:
+			return nil, queryErr
+		case 2:
+			return []hookBead{{ID: "gc-ready", Metadata: map[string]string{"gc.kind": "scope-check"}}}, nil
+		default:
+			t.Fatalf("unexpected workflowServeList call %d", listCalls)
+			return nil, nil
+		}
+	}
+
+	stopErr := errors.New("stop after query retry")
+	waitCalls := 0
+	workflowServeWaitForWake = func(_ <-chan workflowWatchResult, _ time.Duration, _ int) (bool, error) {
+		waitCalls++
+		return false, nil
+	}
+	var processed []string
+	controlDispatcherServe = func(_, _ string, beadID string, _ io.Writer, _ io.Writer) error {
+		processed = append(processed, beadID)
+		return stopErr
+	}
+
+	agent := config.Agent{Name: "control-dispatcher"}
+	err := runWorkflowServeFollow(agent, t.TempDir(), t.TempDir(), agent.EffectiveWorkQuery(), nil, io.Discard)
+	if !errors.Is(err, stopErr) {
+		t.Fatalf("runWorkflowServeFollow error = %v, want retry control error %v", err, stopErr)
+	}
+	if listCalls != 2 {
+		t.Fatalf("workflowServeList calls = %d, want retry after query error", listCalls)
+	}
+	if waitCalls != 1 {
+		t.Fatalf("workflowServeWaitForWake calls = %d, want 1", waitCalls)
+	}
+	if !slices.Equal(processed, []string{"gc-ready"}) {
+		t.Fatalf("processed beads = %#v, want retry to process gc-ready", processed)
+	}
+}
+
 func TestRunWorkflowServeFollowResetsBackoffForProcessedEventAndPending(t *testing.T) {
 	eventsDir := t.TempDir()
 	ep := newTestProvider(t, eventsDir)

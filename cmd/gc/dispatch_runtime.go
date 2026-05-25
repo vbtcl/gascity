@@ -426,6 +426,19 @@ type workflowServeDrainResult struct {
 	pendingAny   bool
 }
 
+type workflowServeQueryError struct {
+	agent string
+	err   error
+}
+
+func (e *workflowServeQueryError) Error() string {
+	return fmt.Sprintf("querying control work for %s: %v", e.agent, e.err)
+}
+
+func (e *workflowServeQueryError) Unwrap() error {
+	return e.err
+}
+
 // drainWorkflowServeWork runs the control-dispatcher drain loop to completion
 // for a single invocation. Returns whether it advanced a control bead and
 // whether the queue still contains only pending work so the --follow caller
@@ -438,12 +451,12 @@ func drainWorkflowServeWork(agentCfg config.Agent, cityPath, storePath, workQuer
 		queue, err := workflowServeList(serveQuery, storePath, workEnv)
 		if err != nil {
 			workflowTracef("serve query-error agent=%s err=%v", agentCfg.QualifiedName(), err)
-			// Surface a killed/timed-out control work query on the event
-			// bus so the reconciler has a named cause to escalate on
-			// rather than the session dying silently (issues #1496/#1497).
+			// Surface killed/timed-out control work queries on the event bus
+			// so follow mode can continue without losing the failure signal
+			// (issues #1496/#1497).
 			emitCityWorkQueryFailure(cityPath, stderr,
 				os.Getenv("GC_SESSION_ID"), os.Getenv("GC_TEMPLATE"), serveQuery, err)
-			return result, fmt.Errorf("querying control work for %s: %w", agentCfg.QualifiedName(), err)
+			return result, &workflowServeQueryError{agent: agentCfg.QualifiedName(), err: err}
 		}
 		if len(queue) == 0 {
 			if result.processedAny && idlePolls < workflowServeIdlePollAttempts {
@@ -556,9 +569,12 @@ func runWorkflowServeFollow(agentCfg config.Agent, cityPath, storePath, workQuer
 	for {
 		drainResult, err := drainWorkflowServeWork(agentCfg, cityPath, storePath, workQuery, workEnv, stderr)
 		if err != nil {
-			return err
-		}
-		if drainResult.processedAny || drainResult.pendingAny {
+			var queryErr *workflowServeQueryError
+			if !errors.As(err, &queryErr) {
+				return err
+			}
+			workflowTracef("serve query-error-continue agent=%s err=%v", agentCfg.QualifiedName(), queryErr.err)
+		} else if drainResult.processedAny || drainResult.pendingAny {
 			idleSweeps = 0
 		}
 		sleepDur := followSleepDuration(idleSweeps)
