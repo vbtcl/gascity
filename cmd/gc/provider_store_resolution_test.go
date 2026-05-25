@@ -471,7 +471,7 @@ name = "demo"
 	t.Setenv("BEADS_DIR", filepath.Join(cityDir, ".beads"))
 
 	var stdout, stderr bytes.Buffer
-	doWispAutoclose(parent.ID, &stdout, &stderr)
+	doWispAutoclose(parent.ID, strings.NewReader(""), &stdout, &stderr)
 
 	reloaded, err := openStoreAtForCity(cityDir, cityDir)
 	if err != nil {

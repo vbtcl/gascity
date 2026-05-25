@@ -1189,6 +1189,8 @@ func TestRigAnywhere_WriteBeadsEnvGTRoot(t *testing.T) {
 // ===========================================================================
 
 func TestRigAnywhere_ResolveRigToContext(t *testing.T) {
+	setCwd(t, t.TempDir())
+
 	t.Run("rig_not_registered_anywhere", func(t *testing.T) {
 		t.Setenv("GC_HOME", t.TempDir())
 

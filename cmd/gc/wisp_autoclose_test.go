@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -188,4 +189,48 @@ func TestWispAutocloseBeadNotFound(t *testing.T) {
 	if stdout.String() != "" {
 		t.Errorf("missing bead should produce no output, got %q", stdout.String())
 	}
+}
+
+func TestWispAutocloseUsesHookBeadWithoutParentLookup(t *testing.T) {
+	mem := beads.NewMemStore()
+	parent, _ := mem.Create(beads.Bead{Title: "work item"})
+	_, _ = mem.Create(beads.Bead{Title: "wisp", Type: "molecule", ParentID: parent.ID})
+	_ = mem.Close(parent.ID)
+
+	store := parentGetFailsStore{Store: mem, parentID: parent.ID}
+
+	var stdout bytes.Buffer
+	doWispAutocloseWithHookBead(store, parent, parent.ID, &stdout)
+
+	if !strings.Contains(stdout.String(), "Auto-closed molecule gc-2 on gc-1") {
+		t.Fatalf("stdout = %q, want auto-close message from hook bead payload", stdout.String())
+	}
+}
+
+func TestWispAutocloseHookBeadParsesBDObject(t *testing.T) {
+	parent, ok := wispAutocloseHookBead(strings.NewReader(`{"id":"gc-1","title":"closed","issue_type":"task"}`), "gc-1")
+	if !ok {
+		t.Fatal("wispAutocloseHookBead did not parse bd hook object")
+	}
+	if parent.ID != "gc-1" || parent.Title != "closed" {
+		t.Fatalf("parent = %#v, want parsed hook bead", parent)
+	}
+}
+
+func TestWispAutocloseHookBeadSkipsMismatchedID(t *testing.T) {
+	if parent, ok := wispAutocloseHookBead(strings.NewReader(`{"id":"gc-2","title":"other"}`), "gc-1"); ok {
+		t.Fatalf("wispAutocloseHookBead = %#v, true; want fallback on mismatched id", parent)
+	}
+}
+
+type parentGetFailsStore struct {
+	beads.Store
+	parentID string
+}
+
+func (s parentGetFailsStore) Get(id string) (beads.Bead, error) {
+	if id == s.parentID {
+		return beads.Bead{}, fmt.Errorf("unexpected parent lookup for %s", id)
+	}
+	return s.Store.Get(id)
 }
