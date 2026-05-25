@@ -42,7 +42,7 @@ func TestWalkthroughURLStringsStayInContractFile(t *testing.T) {
 		}
 		if d.IsDir() {
 			switch d.Name() {
-			case ".git", ".gc", "node_modules":
+			case ".git", ".gc", "node_modules", "worktrees":
 				return filepath.SkipDir
 			default:
 				return nil

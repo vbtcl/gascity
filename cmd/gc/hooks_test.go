@@ -232,6 +232,9 @@ func TestInstallBeadHooksCreatesScripts(t *testing.T) {
 				if !strings.Contains(content, `"$GC_BIN" wisp autoclose`) {
 					t.Errorf("on_close hook missing '\"$GC_BIN\" wisp autoclose':\n%s", content)
 				}
+				if !strings.Contains(content, `printf '%s' "$DATA" | "$GC_BIN" wisp autoclose "$1"`) {
+					t.Errorf("on_close hook does not pipe closed bead JSON into wisp autoclose:\n%s", content)
+				}
 			}
 		})
 	}
