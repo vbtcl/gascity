@@ -226,6 +226,9 @@ func TestInstallBeadHooksCreatesScripts(t *testing.T) {
 			}
 			// on_close hook must also trigger convoy autoclose and wisp autoclose.
 			if tc.filename == "on_close" {
+				if !strings.Contains(content, `export GC_BD_SANDBOX=1`) {
+					t.Errorf("on_close hook missing GC_BD_SANDBOX export:\n%s", content)
+				}
 				if !strings.Contains(content, `"$GC_BIN" convoy autoclose`) {
 					t.Errorf("on_close hook missing '\"$GC_BIN\" convoy autoclose':\n%s", content)
 				}

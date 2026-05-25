@@ -250,11 +250,12 @@ rig directory to find the correct .beads database. This command resolves
 the rig automatically from the --rig flag or by detecting the bead prefix
 in the arguments.
 
-All arguments after "gc bd" are forwarded to bd unchanged.
+All arguments after "gc bd" are forwarded to bd as its subcommand payload.
 
-gc bd forces BD_EXPORT_AUTO=false to prevent bd's git auto-export hook
-from wedging the wrapper after printing command output. If you need
-auto-export behavior, invoke bd directly.
+gc bd forces BD_EXPORT_AUTO=false and runs bd in sandbox mode to prevent
+bd's git auto-export/auto-sync paths from wedging the wrapper after printing
+command output. If you need auto-export or auto-sync behavior, invoke bd
+directly.
 
 ```
 gc bd [bd-args...]

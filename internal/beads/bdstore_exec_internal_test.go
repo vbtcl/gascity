@@ -44,6 +44,9 @@ func TestBDCommandTimeoutForReadCommands(t *testing.T) {
 	if got := bdCommandTimeoutFor("bd", []string{"list", "--json"}); got != bdReadCommandTimeout {
 		t.Fatalf("bd list timeout = %s, want %s", got, bdReadCommandTimeout)
 	}
+	if got := bdCommandTimeoutFor("bd", []string{"--sandbox", "show", "gc-1", "--json"}); got != bdReadCommandTimeout {
+		t.Fatalf("bd --sandbox show timeout = %s, want %s", got, bdReadCommandTimeout)
+	}
 	if got := bdCommandTimeoutFor("bd", []string{"ready", "--json"}); got != bdReadCommandTimeout {
 		t.Fatalf("bd ready timeout = %s, want %s", got, bdReadCommandTimeout)
 	}
@@ -58,6 +61,9 @@ func TestBDCommandTimeoutForReadCommands(t *testing.T) {
 func TestBDCommandTimeoutForGraphApply(t *testing.T) {
 	if got := bdCommandTimeoutFor("bd", []string{"create", "--graph", "/tmp/plan.json", "--json"}); got != bdGraphApplyCommandTimeout {
 		t.Fatalf("bd create --graph timeout = %s, want %s", got, bdGraphApplyCommandTimeout)
+	}
+	if got := bdCommandTimeoutFor("bd", []string{"--sandbox", "create", "--graph", "/tmp/plan.json", "--json"}); got != bdGraphApplyCommandTimeout {
+		t.Fatalf("bd --sandbox create --graph timeout = %s, want %s", got, bdGraphApplyCommandTimeout)
 	}
 }
 

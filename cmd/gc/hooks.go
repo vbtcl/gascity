@@ -95,6 +95,7 @@ DATA=$(cat)
 PAYLOAD=$(printf '{"bead":%%s}' "$DATA")
 title=$(echo "$DATA" | grep -o '"title":"[^"]*"' | head -1 | cut -d'"' -f4)
 (
+  export GC_BD_SANDBOX=1
   "$GC_BIN" event emit bead.closed --subject "$1" --message "$title" --payload "$PAYLOAD" 2>>"$HOOK_LOG" \
     || echo "[$(date -u +%%FT%%TZ)] on_close $1: gc event emit bead.closed failed (gc=$GC_BIN)" >>"$HOOK_LOG" 2>/dev/null \
     || true

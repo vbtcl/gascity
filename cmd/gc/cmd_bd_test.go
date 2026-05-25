@@ -517,8 +517,8 @@ set -eu
 	if !samePath(got["pwd"], rigDir) {
 		t.Fatalf("pwd = %q, want %q", got["pwd"], rigDir)
 	}
-	if got["args"] != "show repo-abc" {
-		t.Fatalf("args = %q, want %q", got["args"], "show repo-abc")
+	if got["args"] != "--sandbox show repo-abc" {
+		t.Fatalf("args = %q, want %q", got["args"], "--sandbox show repo-abc")
 	}
 	if !samePath(got["GC_STORE_ROOT"], rigDir) {
 		t.Fatalf("GC_STORE_ROOT = %q, want %q", got["GC_STORE_ROOT"], rigDir)
@@ -582,6 +582,12 @@ if [ "${BD_EXPORT_AUTO:-}" != "false" ]; then
   echo "BD_EXPORT_AUTO=${BD_EXPORT_AUTO:-}" >&2
   exit 73
 fi
+if [ "${1:-}" = "--sandbox" ]; then
+  shift
+else
+  echo "missing --sandbox" >&2
+  exit 74
+fi
 case "${1:-}" in
   show)
     printf '[{"id":"gc-1","title":"ok"}]\n'
@@ -614,6 +620,56 @@ esac
 		if stderr.String() != "" {
 			t.Fatalf("doBd(%v) stderr = %q, want empty", args, stderr.String())
 		}
+	}
+}
+
+func TestGcBdRunsBdInSandboxMode(t *testing.T) {
+	disableManagedDoltRecoveryForTest(t)
+
+	origCityFlag := cityFlag
+	origRigFlag := rigFlag
+	defer func() {
+		cityFlag = origCityFlag
+		rigFlag = origRigFlag
+	}()
+	cityFlag = ""
+	rigFlag = ""
+
+	cityDir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(cityDir, ".beads"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(cityDir, "city.toml"), []byte(`[workspace]
+name = "demo"
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	binDir := t.TempDir()
+	capture := filepath.Join(t.TempDir(), "gc-bd-args.txt")
+	script := filepath.Join(binDir, "bd")
+	if err := os.WriteFile(script, []byte(`#!/bin/sh
+set -eu
+printf '%s\n' "$*" > "${CAPTURE_PATH}"
+printf '[{"id":"gc-1","title":"ok"}]\n'
+`), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("CAPTURE_PATH", capture)
+	t.Setenv("GC_CITY_PATH", cityDir)
+
+	var stdout, stderr bytes.Buffer
+	if got := doBd([]string{"show", "gc-1", "--json"}, &stdout, &stderr); got != 0 {
+		t.Fatalf("doBd() = %d, want 0; stdout=%q stderr=%q", got, stdout.String(), stderr.String())
+	}
+
+	data, err := os.ReadFile(capture)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := strings.TrimSpace(string(data)), "--sandbox show gc-1 --json"; got != want {
+		t.Fatalf("bd args = %q, want %q", got, want)
 	}
 }
 
@@ -740,8 +796,8 @@ set -eu
 	if !samePath(got["pwd"], cityDir) {
 		t.Fatalf("pwd = %q, want %q", got["pwd"], cityDir)
 	}
-	if got["args"] != "list --label repo-open" {
-		t.Fatalf("args = %q, want %q", got["args"], "list --label repo-open")
+	if got["args"] != "--sandbox list --label repo-open" {
+		t.Fatalf("args = %q, want %q", got["args"], "--sandbox list --label repo-open")
 	}
 	if !samePath(got["GC_STORE_ROOT"], cityDir) {
 		t.Fatalf("GC_STORE_ROOT = %q, want %q", got["GC_STORE_ROOT"], cityDir)
@@ -953,8 +1009,8 @@ set -eu
 	if !samePath(got["pwd"], rigDir) {
 		t.Fatalf("pwd = %q, want %q", got["pwd"], rigDir)
 	}
-	if got["args"] != "list" {
-		t.Fatalf("args = %q, want %q", got["args"], "list")
+	if got["args"] != "--sandbox list" {
+		t.Fatalf("args = %q, want %q", got["args"], "--sandbox list")
 	}
 	if !samePath(got["BEADS_DIR"], filepath.Join(rigDir, ".beads")) {
 		t.Fatalf("BEADS_DIR = %q, want %q", got["BEADS_DIR"], filepath.Join(rigDir, ".beads"))
@@ -1646,8 +1702,8 @@ set -eu
 	if !samePath(got["pwd"], cityDir) {
 		t.Fatalf("pwd = %q, want %q", got["pwd"], cityDir)
 	}
-	if got["args"] != "context --json" {
-		t.Fatalf("args = %q, want %q", got["args"], "context --json")
+	if got["args"] != "--sandbox context --json" {
+		t.Fatalf("args = %q, want %q", got["args"], "--sandbox context --json")
 	}
 	if !samePath(got["GC_STORE_ROOT"], cityDir) {
 		t.Fatalf("GC_STORE_ROOT = %q, want %q", got["GC_STORE_ROOT"], cityDir)
@@ -1730,8 +1786,8 @@ set -eu
 	if !samePath(got["pwd"], rigDir) {
 		t.Fatalf("pwd = %q, want %q", got["pwd"], rigDir)
 	}
-	if got["args"] != "context --json" {
-		t.Fatalf("args = %q, want %q", got["args"], "context --json")
+	if got["args"] != "--sandbox context --json" {
+		t.Fatalf("args = %q, want %q", got["args"], "--sandbox context --json")
 	}
 	if !samePath(got["GC_STORE_ROOT"], rigDir) {
 		t.Fatalf("GC_STORE_ROOT = %q, want %q", got["GC_STORE_ROOT"], rigDir)

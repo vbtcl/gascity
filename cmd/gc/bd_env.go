@@ -180,6 +180,53 @@ func applyExportSuppressionEnv(env map[string]string) {
 	env["BD_EXPORT_AUTO"] = "false"
 }
 
+func gcManagedBdArgs(args []string) []string {
+	for _, arg := range args {
+		if arg == "--sandbox" || strings.HasPrefix(arg, "--sandbox=") {
+			return args
+		}
+	}
+	out := make([]string, 0, len(args)+1)
+	out = append(out, "--sandbox")
+	out = append(out, args...)
+	return out
+}
+
+func gcManagedBdCommandRunnerWithEnv(env map[string]string) beads.CommandRunner {
+	runner := beadsExecCommandRunnerWithEnv(env)
+	return func(dir, name string, args ...string) ([]byte, error) {
+		if name == "bd" {
+			args = gcManagedBdArgs(args)
+		}
+		return runner(dir, name, args...)
+	}
+}
+
+func gcManagedBdCommandRunnerForEnv(env map[string]string) beads.CommandRunner {
+	if !gcBdSandboxRequested(env) {
+		return beadsExecCommandRunnerWithEnv(env)
+	}
+	return gcManagedBdCommandRunnerWithEnv(env)
+}
+
+func gcBdSandboxRequested(env map[string]string) bool {
+	if env != nil {
+		if envTruthy(env["GC_BD_SANDBOX"]) {
+			return true
+		}
+	}
+	return envTruthy(os.Getenv("GC_BD_SANDBOX"))
+}
+
+func envTruthy(value string) bool {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "1", "true", "yes", "on":
+		return true
+	default:
+		return false
+	}
+}
+
 func applyControllerBdEnv(env map[string]string) {
 	applyExportSuppressionEnv(env)
 	if strings.TrimSpace(os.Getenv("BEADS_ACTOR")) == "" {
@@ -826,7 +873,7 @@ func bdCommandRunnerWithManagedRetryErr(cityPath string, envFn func(dir string) 
 		}
 		ensureProjectedDoltEnvExplicit(env)
 		ensureProjectedPostgresEnvExplicit(env)
-		runner := beadsExecCommandRunnerWithEnv(env)
+		runner := gcManagedBdCommandRunnerForEnv(env)
 		out, err := runner(dir, name, args...)
 		if name != "bd" {
 			return out, err
@@ -860,7 +907,7 @@ func bdCommandRunnerWithManagedRetryErr(cityPath string, envFn func(dir string) 
 		}
 		ensureProjectedDoltEnvExplicit(retryEnv)
 		ensureProjectedPostgresEnvExplicit(retryEnv)
-		retryRunner := beadsExecCommandRunnerWithEnv(retryEnv)
+		retryRunner := gcManagedBdCommandRunnerForEnv(retryEnv)
 		return retryRunner(dir, name, args...)
 	}
 }

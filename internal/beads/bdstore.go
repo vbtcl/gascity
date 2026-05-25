@@ -148,15 +148,50 @@ func bdCommandTimeoutFor(name string, args []string) time.Duration {
 	if name != "bd" || len(args) == 0 {
 		return bdCommandTimeout
 	}
-	if len(args) >= 2 && args[0] == "create" && args[1] == "--graph" {
+	cmdIndex := bdCommandArgIndex(args)
+	if cmdIndex < 0 {
+		return bdCommandTimeout
+	}
+	cmdArgs := args[cmdIndex:]
+	if len(cmdArgs) >= 2 && cmdArgs[0] == "create" && cmdArgs[1] == "--graph" {
 		return bdGraphApplyCommandTimeout
 	}
-	switch args[0] {
+	switch cmdArgs[0] {
 	case "count", "list", "ready", "show", "stats":
 		return bdReadCommandTimeout
 	default:
 		return bdCommandTimeout
 	}
+}
+
+func bdCommandArgIndex(args []string) int {
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		switch {
+		case arg == "--sandbox" || arg == "--json" || arg == "--readonly" || arg == "--profile" || arg == "--global":
+			continue
+		case arg == "--quiet" || arg == "-q" || arg == "--verbose" || arg == "-v":
+			continue
+		case strings.HasPrefix(arg, "--sandbox=") ||
+			strings.HasPrefix(arg, "--json=") ||
+			strings.HasPrefix(arg, "--readonly=") ||
+			strings.HasPrefix(arg, "--profile=") ||
+			strings.HasPrefix(arg, "--global=") ||
+			strings.HasPrefix(arg, "--quiet=") ||
+			strings.HasPrefix(arg, "--verbose="):
+			continue
+		case arg == "--actor" || arg == "--db" || arg == "--dolt-auto-commit":
+			i++
+			continue
+		case strings.HasPrefix(arg, "--actor=") ||
+			strings.HasPrefix(arg, "--db=") ||
+			strings.HasPrefix(arg, "--dolt-auto-commit="):
+			continue
+		default:
+			return i
+		}
+	}
+	return -1
 }
 
 // bdStdoutErrorDetail extracts a human-readable error description from

@@ -3120,6 +3120,118 @@ func TestBdCommandRunnerWithManagedRetryRecoversFromAutoImportFallback(t *testin
 	}
 }
 
+func TestBdCommandRunnerWithManagedRetryRunsBdInSandboxMode(t *testing.T) {
+	t.Setenv("GC_BEADS", "bd")
+	t.Setenv("GC_BD_SANDBOX", "1")
+
+	origRunner := beadsExecCommandRunnerWithEnv
+	t.Cleanup(func() {
+		beadsExecCommandRunnerWithEnv = origRunner
+	})
+
+	var capturedArgs []string
+	beadsExecCommandRunnerWithEnv = func(_ map[string]string) beads.CommandRunner {
+		return func(_ string, name string, args ...string) ([]byte, error) {
+			if name != "bd" {
+				t.Fatalf("runner command = %q, want bd", name)
+			}
+			capturedArgs = append([]string(nil), args...)
+			return []byte("ok"), nil
+		}
+	}
+
+	runner := bdCommandRunnerWithManagedRetry(t.TempDir(), func(_ string) map[string]string {
+		return map[string]string{"GC_DOLT_PORT": "3307"}
+	})
+
+	if _, err := runner(t.TempDir(), "bd", "show", "demo-1", "--json"); err != nil {
+		t.Fatalf("runner error = %v, want nil", err)
+	}
+
+	want := []string{"--sandbox", "show", "demo-1", "--json"}
+	if len(capturedArgs) != len(want) {
+		t.Fatalf("captured args = %v, want %v", capturedArgs, want)
+	}
+	for i := range want {
+		if capturedArgs[i] != want[i] {
+			t.Fatalf("captured args = %v, want %v", capturedArgs, want)
+		}
+	}
+}
+
+func TestBdCommandRunnerWithManagedRetryDoesNotDuplicateSandboxFlag(t *testing.T) {
+	t.Setenv("GC_BEADS", "bd")
+	t.Setenv("GC_BD_SANDBOX", "1")
+
+	origRunner := beadsExecCommandRunnerWithEnv
+	t.Cleanup(func() {
+		beadsExecCommandRunnerWithEnv = origRunner
+	})
+
+	var capturedArgs []string
+	beadsExecCommandRunnerWithEnv = func(_ map[string]string) beads.CommandRunner {
+		return func(_ string, _ string, args ...string) ([]byte, error) {
+			capturedArgs = append([]string(nil), args...)
+			return []byte("ok"), nil
+		}
+	}
+
+	runner := bdCommandRunnerWithManagedRetry(t.TempDir(), func(_ string) map[string]string {
+		return map[string]string{"GC_DOLT_PORT": "3307"}
+	})
+
+	if _, err := runner(t.TempDir(), "bd", "--sandbox", "show", "demo-1", "--json"); err != nil {
+		t.Fatalf("runner error = %v, want nil", err)
+	}
+
+	want := []string{"--sandbox", "show", "demo-1", "--json"}
+	if len(capturedArgs) != len(want) {
+		t.Fatalf("captured args = %v, want %v", capturedArgs, want)
+	}
+	for i := range want {
+		if capturedArgs[i] != want[i] {
+			t.Fatalf("captured args = %v, want %v", capturedArgs, want)
+		}
+	}
+}
+
+func TestBdCommandRunnerWithManagedRetryLeavesBdArgsAloneByDefault(t *testing.T) {
+	t.Setenv("GC_BEADS", "bd")
+	t.Setenv("GC_BD_SANDBOX", "")
+	_ = os.Unsetenv("GC_BD_SANDBOX")
+
+	origRunner := beadsExecCommandRunnerWithEnv
+	t.Cleanup(func() {
+		beadsExecCommandRunnerWithEnv = origRunner
+	})
+
+	var capturedArgs []string
+	beadsExecCommandRunnerWithEnv = func(_ map[string]string) beads.CommandRunner {
+		return func(_ string, _ string, args ...string) ([]byte, error) {
+			capturedArgs = append([]string(nil), args...)
+			return []byte("ok"), nil
+		}
+	}
+
+	runner := bdCommandRunnerWithManagedRetry(t.TempDir(), func(_ string) map[string]string {
+		return map[string]string{"GC_DOLT_PORT": "3307"}
+	})
+
+	if _, err := runner(t.TempDir(), "bd", "show", "demo-1", "--json"); err != nil {
+		t.Fatalf("runner error = %v, want nil", err)
+	}
+
+	want := []string{"show", "demo-1", "--json"}
+	if len(capturedArgs) != len(want) {
+		t.Fatalf("captured args = %v, want %v", capturedArgs, want)
+	}
+	for i := range want {
+		if capturedArgs[i] != want[i] {
+			t.Fatalf("captured args = %v, want %v", capturedArgs, want)
+		}
+	}
+}
+
 func TestBdCommandRunnerWithManagedRetryRecoversAndRerunsWithFreshEnv(t *testing.T) {
 	t.Setenv("GC_BEADS", "bd")
 
