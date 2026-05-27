@@ -230,6 +230,41 @@ gh pr create --repo $(git remote get-url origin | sed 's/.*github.com[:/]\(.*\)\
 | View convoy progress | `{{ cmd }} convoy status <id>` | |
 | Create issues | `gc bd create "title"` | ~~gc issue create~~ (not a command) |
 
+### Convoy / Epic / Related-bead pattern: ALWAYS use a shared integration branch
+
+When you sling **more than one related bead** (a convoy, an epic, or a hand-picked set sharing a theme), each polecat must land on a **shared integration branch**, not on main directly. Refinery then merges all polecat branches into the integration branch, and the final landing to main happens as **one consolidated PR**, not N.
+
+Why: N separate PRs through the merge queue means N× CI cost and N× flake exposure. One PR = ~N× faster, ~N× cheaper. With the GitHub merge queue + GPU-shared CI, the savings compound.
+
+**Before slinging the first bead of the group:**
+
+1. **Create the integration branch from current main:**
+   ```bash
+   git push origin origin/main:refs/heads/dev-<theme>-<YYYY-MM-DD>
+   ```
+   Use a single-segment name (no `/`) to avoid directory-file conflicts. Themes: `tcl-migration`, `sdc-perf`, `aot-fixes`, etc.
+
+2. **For each bead in the group, set `metadata.target` to that integration branch:**
+   ```bash
+   bd update <bead> --set-metadata target=dev-<theme>-<YYYY-MM-DD>
+   ```
+   Also update the bead's `notes` with explicit instructions: "Base your branch on `dev-<theme>-<YYYY-MM-DD>`. When done, hand off to refinery — refinery will merge INTO `dev-<theme>-<YYYY-MM-DD>`, not main."
+
+3. **File the parent as a `convoy` bead** (`bd create --type=convoy --title="..."`) and add all children with `bd dep add <child> <convoy>`. The convoy bead is what refinery uses to know when to open the final PR (it watches for all children closed).
+
+4. **Sling each child to polecat as normal:**
+   ```bash
+   gc sling <rig>/polecat <bead>
+   ```
+
+**What refinery does (configured via `integration_branch_auto_land=true`, the default):**
+
+- Each polecat finishes → refinery merges polecat branch into `dev-<theme>-<YYYY-MM-DD>` (no PR yet).
+- When all children of the owned convoy bead are closed AND landed in that integration branch, refinery auto-assigns the convoy bead to itself with `metadata.branch=dev-<theme>-<YYYY-MM-DD>` and `metadata.target=main`.
+- The next refinery patrol iteration picks up the convoy bead like any other work bead and opens **one** PR `dev-<theme>-<YYYY-MM-DD> → main`.
+
+**Single-bead work still targets main directly.** This pattern is for groups only.
+
 **Rig lifecycle commands:**
 - `suspend/resume` — Dormant toggle. Daemon skips suspended rigs entirely.
 - `stop/start` — Immediate stop/start of rig patrol agents (witness + refinery).

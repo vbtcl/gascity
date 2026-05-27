@@ -70,8 +70,8 @@ description = "Whether to delete source branches after merge"
 default = "true"
 
 [vars.integration_branch_auto_land]
-description = "Auto-create work beads to land completed integration branches"
-default = "false"
+description = "Auto-create work beads to land completed integration branches. When true, refinery scans owned convoy beads on every patrol iteration; if a convoy's children are all closed AND landed on a shared integration branch (per metadata.target), refinery self-assigns the convoy bead and merges that integration branch to target_branch as a single consolidated PR. Default true: the 'fewer-PRs' pattern — a convoy/epic of N children produces 1 PR to main, not N. Set to false only if you specifically want each child to ship as its own PR."
+default = "true"
 
 [vars.event_timeout]
 description = "Seconds to wait for events before re-checking (exponential backoff)"

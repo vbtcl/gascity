@@ -60,7 +60,10 @@ without catching the mismatch (upstream #1833).
 gc bd list --assignee="$GC_AGENT" --status=in_progress
 
 # If none found, pour one (root-only — no child step beads) and assign it
-WISP=$(gc bd mol wisp mol-refinery-patrol --root-only --var target_branch={{ .DefaultBranch }} --var rig_name={{ .RigName }} --var binding_prefix={{ .BindingPrefix }} --json | jq -r '.new_epic_id')
+# integration_branch_auto_land=true: when a convoy's children all land on a
+# shared integration branch, refinery auto-creates a work bead to land that
+# branch to main as a single consolidated PR (the "fewer-PRs" pattern).
+WISP=$(gc bd mol wisp mol-refinery-patrol --root-only --var target_branch={{ .DefaultBranch }} --var rig_name={{ .RigName }} --var binding_prefix={{ .BindingPrefix }} --var integration_branch_auto_land=true --json | jq -r '.new_epic_id')
 gc bd update "$WISP" --assignee="$GC_AGENT"
 ```
 
