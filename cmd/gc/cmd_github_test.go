@@ -135,6 +135,188 @@ func TestGitHubPRBackfillCommandCreatesDedupedRepairBeads(t *testing.T) {
 	}
 }
 
+func TestGitHubPRBackfillCommandCoalescesFailureKindTransition(t *testing.T) {
+	cityPath := writeGitHubMonitorTestCity(t)
+	store := beads.NewMemStore()
+	sequences := [][]githubmonitor.PullRequest{
+		{
+			{
+				Number:           2560,
+				Title:            "Deploy",
+				URL:              "https://github.com/partcleda/partcl/pull/2560",
+				BaseRefName:      "main",
+				HeadRefName:      "fix",
+				HeadSHA:          "abc123",
+				MergeStateStatus: "BLOCKED",
+			},
+		},
+		{
+			{
+				Number:           2560,
+				Title:            "Deploy",
+				URL:              "https://github.com/partcleda/partcl/pull/2560",
+				BaseRefName:      "main",
+				HeadRefName:      "fix",
+				HeadSHA:          "abc123",
+				MergeStateStatus: "UNSTABLE",
+				Checks:           []githubmonitor.Check{{Name: "unit", Status: "COMPLETED", Conclusion: "FAILURE"}},
+			},
+		},
+	}
+	calls := 0
+	oldToken := resolveGitHubTokenForBackfill
+	oldClient := newGitHubPRBackfillClient
+	oldStore := openGitHubPRRepairStore
+	resolveGitHubTokenForBackfill = func(context.Context) (string, error) { return "token", nil }
+	newGitHubPRBackfillClient = func(string) githubPRLister {
+		if calls >= len(sequences) {
+			t.Fatalf("unexpected GitHub client call %d", calls)
+		}
+		prs := sequences[calls]
+		calls++
+		return fakeGitHubPRLister{prs: prs}
+	}
+	openGitHubPRRepairStore = func(string, string) (beads.Store, error) {
+		return store, nil
+	}
+	t.Cleanup(func() {
+		resolveGitHubTokenForBackfill = oldToken
+		newGitHubPRBackfillClient = oldClient
+		openGitHubPRRepairStore = oldStore
+	})
+
+	for i := 0; i < len(sequences); i++ {
+		var stdout, stderr bytes.Buffer
+		code := run([]string{"--city", cityPath, "github", "pr", "backfill", "partcl-main", "--create-repair-beads", "--json"}, &stdout, &stderr)
+		if code != 0 {
+			t.Fatalf("run %d code = %d, stdout = %q, stderr = %q", i, code, stdout.String(), stderr.String())
+		}
+	}
+
+	created, err := store.ListByMetadata(map[string]string{
+		"source":          "github-pr-monitor",
+		"github.owner":    "partcleda",
+		"github.repo":     "partcl",
+		"github.pr":       "2560",
+		"github.head_sha": "abc123",
+	}, 0)
+	if err != nil {
+		t.Fatalf("ListByMetadata: %v", err)
+	}
+	if len(created) != 1 {
+		t.Fatalf("created repair beads = %#v, want one bead across failure_kind transition", created)
+	}
+	got := created[0]
+	if got.Metadata["github.failure_kind"] != githubmonitor.FailureKindChecksFailed {
+		t.Fatalf("github.failure_kind = %q, want %q", got.Metadata["github.failure_kind"], githubmonitor.FailureKindChecksFailed)
+	}
+	if got.Metadata["github.failed_checks"] != "unit" {
+		t.Fatalf("github.failed_checks = %q, want unit", got.Metadata["github.failed_checks"])
+	}
+	if !strings.Contains(got.Description, "unit") || !strings.Contains(got.Description, githubmonitor.FailureKindChecksFailed) {
+		t.Fatalf("description = %q, want latest failed-check details", got.Description)
+	}
+}
+
+func TestGitHubPRBackfillCommandNudgesInProgressRepairWorker(t *testing.T) {
+	cityPath := writeGitHubMonitorTestCity(t)
+	store := beads.NewMemStore()
+	existing, err := store.Create(beads.Bead{
+		Title: "Existing repair",
+		Metadata: map[string]string{
+			"source":              "github-pr-monitor",
+			"github.owner":        "partcleda",
+			"github.repo":         "partcl",
+			"github.pr":           "2560",
+			"github.head_sha":     "abc123",
+			"github.failure_kind": githubmonitor.FailureKindBlocked,
+			"gc.routed_to":        "partcl/polecat",
+		},
+	})
+	if err != nil {
+		t.Fatalf("Create existing: %v", err)
+	}
+	status := "in_progress"
+	assignee := "partcl/furiosa"
+	if err := store.Update(existing.ID, beads.UpdateOpts{Status: &status, Assignee: &assignee}); err != nil {
+		t.Fatalf("mark existing in progress: %v", err)
+	}
+
+	oldToken := resolveGitHubTokenForBackfill
+	oldClient := newGitHubPRBackfillClient
+	oldStore := openGitHubPRRepairStore
+	oldNudge := nudgeGitHubPRRepairWorker
+	var nudges []struct {
+		target  string
+		message string
+	}
+	resolveGitHubTokenForBackfill = func(context.Context) (string, error) { return "token", nil }
+	newGitHubPRBackfillClient = func(string) githubPRLister {
+		return fakeGitHubPRLister{prs: []githubmonitor.PullRequest{
+			{
+				Number:           2560,
+				Title:            "Deploy",
+				URL:              "https://github.com/partcleda/partcl/pull/2560",
+				BaseRefName:      "main",
+				HeadRefName:      "fix",
+				HeadSHA:          "abc123",
+				MergeStateStatus: "UNSTABLE",
+				Checks:           []githubmonitor.Check{{Name: "unit", Status: "COMPLETED", Conclusion: "FAILURE"}},
+			},
+		}}
+	}
+	openGitHubPRRepairStore = func(string, string) (beads.Store, error) {
+		return store, nil
+	}
+	nudgeGitHubPRRepairWorker = func(target, message string) error {
+		nudges = append(nudges, struct {
+			target  string
+			message string
+		}{target: target, message: message})
+		return nil
+	}
+	t.Cleanup(func() {
+		resolveGitHubTokenForBackfill = oldToken
+		newGitHubPRBackfillClient = oldClient
+		openGitHubPRRepairStore = oldStore
+		nudgeGitHubPRRepairWorker = oldNudge
+	})
+
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"--city", cityPath, "github", "pr", "backfill", "partcl-main", "--create-repair-beads", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("run code = %d, stdout = %q, stderr = %q", code, stdout.String(), stderr.String())
+	}
+
+	created, err := store.ListByMetadata(map[string]string{
+		"source":          "github-pr-monitor",
+		"github.owner":    "partcleda",
+		"github.repo":     "partcl",
+		"github.pr":       "2560",
+		"github.head_sha": "abc123",
+	}, 0)
+	if err != nil {
+		t.Fatalf("ListByMetadata: %v", err)
+	}
+	if len(created) != 1 || created[0].ID != existing.ID {
+		t.Fatalf("repair beads = %#v, want existing bead only", created)
+	}
+	if created[0].Metadata["github.failure_kind"] != githubmonitor.FailureKindChecksFailed {
+		t.Fatalf("github.failure_kind = %q, want %q", created[0].Metadata["github.failure_kind"], githubmonitor.FailureKindChecksFailed)
+	}
+	if len(nudges) != 1 {
+		t.Fatalf("nudges = %#v, want one worker nudge", nudges)
+	}
+	if nudges[0].target != assignee {
+		t.Fatalf("nudge target = %q, want %q", nudges[0].target, assignee)
+	}
+	for _, want := range []string{existing.ID, "partcleda/partcl#2560", githubmonitor.FailureKindChecksFailed, "unit"} {
+		if !strings.Contains(nudges[0].message, want) {
+			t.Fatalf("nudge message = %q, want %q", nudges[0].message, want)
+		}
+	}
+}
+
 func TestGitHubPRBackfillCommandFiltersCleanResultsByDefault(t *testing.T) {
 	cityPath := writeGitHubMonitorTestCity(t)
 	oldToken := resolveGitHubTokenForBackfill

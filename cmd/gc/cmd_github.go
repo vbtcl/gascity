@@ -30,6 +30,17 @@ var (
 	openGitHubPRRepairStore       = func(cityPath, scopeRoot string) (beads.Store, error) {
 		return openStoreAtForCity(scopeRoot, cityPath)
 	}
+	nudgeGitHubPRRepairWorker = func(target, message string) error {
+		var stderr strings.Builder
+		if code := cmdSessionNudge([]string{target, message}, nudgeDeliveryWaitIdle, false, io.Discard, &stderr); code != 0 {
+			detail := strings.TrimSpace(stderr.String())
+			if detail != "" {
+				return errors.New(detail)
+			}
+			return fmt.Errorf("gc session nudge exited with status %d", code)
+		}
+		return nil
+	}
 )
 
 type githubPRBackfillOptions struct {
@@ -224,12 +235,22 @@ func ensureGitHubPRRepairBead(cityPath string, cfg *config.City, monitor config.
 	}
 
 	filters := githubPRRepairDedupeMetadata(result)
-	existing, err := store.ListByMetadata(filters, 1)
+	existing, err := store.ListByMetadata(filters, 0)
 	if err != nil {
 		return beads.Bead{}, false, fmt.Errorf("checking existing repair beads: %w", err)
 	}
 	if len(existing) > 0 {
-		return existing[0], false, nil
+		selected := selectGitHubPRRepairBead(existing)
+		updated, err := updateGitHubPRRepairBead(store, selected, result)
+		if err != nil {
+			return beads.Bead{}, false, err
+		}
+		if shouldNudgeGitHubPRRepairWorker(selected) {
+			if err := nudgeGitHubPRRepairWorker(strings.TrimSpace(selected.Assignee), githubPRRepairNudgeMessage(updated, result)); err != nil {
+				return beads.Bead{}, false, fmt.Errorf("nudging assigned repair worker %q: %w", selected.Assignee, err)
+			}
+		}
+		return updated, false, nil
 	}
 
 	priority := 1
@@ -249,17 +270,17 @@ func ensureGitHubPRRepairBead(cityPath string, cfg *config.City, monitor config.
 
 func githubPRRepairDedupeMetadata(result githubmonitor.Result) map[string]string {
 	return map[string]string{
-		"source":              "github-pr-monitor",
-		"github.owner":        result.Owner,
-		"github.repo":         result.Repo,
-		"github.pr":           strconv.Itoa(result.Number),
-		"github.head_sha":     result.HeadSHA,
-		"github.failure_kind": result.FailureKind,
+		"source":          "github-pr-monitor",
+		"github.owner":    result.Owner,
+		"github.repo":     result.Repo,
+		"github.pr":       strconv.Itoa(result.Number),
+		"github.head_sha": result.HeadSHA,
 	}
 }
 
 func githubPRRepairMetadata(result githubmonitor.Result) map[string]string {
 	metadata := githubPRRepairDedupeMetadata(result)
+	metadata["github.failure_kind"] = result.FailureKind
 	metadata["github.monitor"] = result.Monitor
 	metadata["github.url"] = result.URL
 	metadata["github.base"] = result.BaseRefName
@@ -270,6 +291,64 @@ func githubPRRepairMetadata(result githubmonitor.Result) map[string]string {
 	metadata["github.pending_checks"] = strings.Join(result.PendingChecks, "\n")
 	metadata["gc.routed_to"] = result.RepairRoute
 	return metadata
+}
+
+func updateGitHubPRRepairBead(store beads.Store, existing beads.Bead, result githubmonitor.Result) (beads.Bead, error) {
+	title := githubPRRepairTitle(result)
+	description := githubPRRepairDescription(result)
+	metadata := githubPRRepairMetadata(result)
+	if err := store.Update(existing.ID, beads.UpdateOpts{
+		Title:       &title,
+		Description: &description,
+		Metadata:    metadata,
+	}); err != nil {
+		return beads.Bead{}, fmt.Errorf("updating existing repair bead %s: %w", existing.ID, err)
+	}
+
+	updated := existing
+	updated.Title = title
+	updated.Description = description
+	if updated.Metadata == nil {
+		updated.Metadata = map[string]string{}
+	}
+	for key, value := range metadata {
+		updated.Metadata[key] = value
+	}
+	return updated, nil
+}
+
+func selectGitHubPRRepairBead(existing []beads.Bead) beads.Bead {
+	for _, bead := range existing {
+		if shouldNudgeGitHubPRRepairWorker(bead) {
+			return bead
+		}
+	}
+	return existing[0]
+}
+
+func shouldNudgeGitHubPRRepairWorker(existing beads.Bead) bool {
+	return strings.TrimSpace(existing.Status) == "in_progress" && strings.TrimSpace(existing.Assignee) != ""
+}
+
+func githubPRRepairNudgeMessage(existing beads.Bead, result githubmonitor.Result) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "GitHub PR monitor updated repair bead %s for %s/%s#%d", existing.ID, result.Owner, result.Repo, result.Number)
+	if result.HeadSHA != "" {
+		fmt.Fprintf(&b, " at %s", result.HeadSHA)
+	}
+	if result.FailureKind != "" {
+		fmt.Fprintf(&b, ": %s", result.FailureKind)
+	} else if result.State != "" {
+		fmt.Fprintf(&b, ": %s", result.State)
+	}
+	if len(result.FailedChecks) > 0 {
+		fmt.Fprintf(&b, ". Failed checks: %s", strings.Join(result.FailedChecks, ", "))
+	}
+	if len(result.PendingChecks) > 0 {
+		fmt.Fprintf(&b, ". Pending checks: %s", strings.Join(result.PendingChecks, ", "))
+	}
+	b.WriteString(". Run gc hook to continue the assigned repair.")
+	return b.String()
 }
 
 func githubPRRepairTitle(result githubmonitor.Result) string {
