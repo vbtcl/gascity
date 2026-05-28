@@ -901,7 +901,7 @@ func TestResolveMailTargets_BareRigScopedNamedUsesUniqueLiveConfiguredNamedSessi
 	if target.display != "frontend/rig-worker" {
 		t.Fatalf("display = %q, want frontend/rig-worker", target.display)
 	}
-	want := []string{"frontend/rig-worker", b.ID, "old-frontend-worker"}
+	want := []string{"frontend/rig-worker", b.ID, "frontend--rig-worker", "old-frontend-worker"}
 	if strings.Join(target.recipients, ",") != strings.Join(want, ",") {
 		t.Fatalf("recipients = %#v, want %#v", target.recipients, want)
 	}

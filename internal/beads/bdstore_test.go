@@ -2912,25 +2912,28 @@ func TestBdStoreCreateOmitsEphemeralFlagByDefault(t *testing.T) {
 	}
 }
 
-func TestBdStoreListWispsUsesQueryWithEphemeralPredicate(t *testing.T) {
+func TestBdStoreListWispsUsesListWithClientEphemeralFilter(t *testing.T) {
 	var gotCmd string
 	runner := func(_, name string, args ...string) ([]byte, error) {
 		gotCmd = name + " " + strings.Join(args, " ")
-		return []byte(`[{"id":"bd-w","title":"wisp","status":"open","issue_type":"task","created_at":"2026-05-01T00:00:00Z","ephemeral":true,"labels":["order-tracking"]}]`), nil
+		return []byte(`[
+			{"id":"bd-i","title":"issue","status":"open","issue_type":"task","created_at":"2026-05-01T00:00:00Z","labels":["order-tracking"]},
+			{"id":"bd-w","title":"wisp","status":"open","issue_type":"task","created_at":"2026-05-01T00:00:00Z","ephemeral":true,"labels":["order-tracking"]}
+		]`), nil
 	}
 	s := beads.NewBdStore("/city", runner)
 	got, err := s.List(beads.ListQuery{Label: "order-tracking", TierMode: beads.TierWisps})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.HasPrefix(gotCmd, "bd query --json ") {
-		t.Fatalf("cmd = %q, want bd query prefix", gotCmd)
+	if !strings.HasPrefix(gotCmd, "bd list --json ") {
+		t.Fatalf("cmd = %q, want bd list prefix", gotCmd)
 	}
-	if !strings.Contains(gotCmd, "ephemeral=true") {
-		t.Fatalf("cmd = %q, want ephemeral=true clause", gotCmd)
+	if strings.HasPrefix(gotCmd, "bd query ") {
+		t.Fatalf("cmd = %q, must not use bd query", gotCmd)
 	}
-	if !strings.Contains(gotCmd, "label=order-tracking") {
-		t.Fatalf("cmd = %q, want label clause", gotCmd)
+	if !strings.Contains(gotCmd, "--label=order-tracking") {
+		t.Fatalf("cmd = %q, want label flag", gotCmd)
 	}
 	if len(got) != 1 || got[0].ID != "bd-w" || !got[0].Ephemeral {
 		t.Fatalf("got = %+v, want one ephemeral bead bd-w", got)
@@ -3001,7 +3004,7 @@ func TestBdStoreListWispsReturnsPartialRowsWithErrorOnCorruptEntries(t *testing.
 		out []byte
 		err error
 	}{
-		`bd query --json ephemeral=true --limit 0`: {
+		`bd list --json --include-infra --include-gates --limit 0`: {
 			out: []byte(`[
 				{"id":"bd-good","title":"good","status":"open","issue_type":"task","created_at":"2026-05-01T00:00:00Z","ephemeral":true},
 				{"id":"bd-bad","title":"bad","status":"open","issue_type":"task","created_at":"not-a-time","ephemeral":true}
@@ -3017,8 +3020,8 @@ func TestBdStoreListWispsReturnsPartialRowsWithErrorOnCorruptEntries(t *testing.
 	if !errors.As(err, &partial) {
 		t.Fatalf("List(wisps) error = %v, want *beads.PartialResultError", err)
 	}
-	if partial.Op != "bd query" {
-		t.Errorf("PartialResultError.Op = %q, want %q", partial.Op, "bd query")
+	if partial.Op != "bd list" {
+		t.Errorf("PartialResultError.Op = %q, want %q", partial.Op, "bd list")
 	}
 }
 
@@ -3027,11 +3030,11 @@ func TestBdStoreListBothTiersMergesAndDedupes(t *testing.T) {
 	runner := func(_, name string, args ...string) ([]byte, error) {
 		full := name + " " + strings.Join(args, " ")
 		calls = append(calls, full)
-		switch {
-		case strings.HasPrefix(full, "bd list "):
-			return []byte(`[{"id":"bd-i","title":"issue","status":"open","issue_type":"task","created_at":"2026-05-01T00:00:00Z","labels":["order-run:o"]}]`), nil
-		case strings.HasPrefix(full, "bd query "):
-			return []byte(`[{"id":"bd-w","title":"wisp","status":"open","issue_type":"task","created_at":"2026-05-02T00:00:00Z","ephemeral":true,"labels":["order-run:o"]}]`), nil
+		if strings.HasPrefix(full, "bd list ") {
+			return []byte(`[
+				{"id":"bd-i","title":"issue","status":"open","issue_type":"task","created_at":"2026-05-01T00:00:00Z","labels":["order-run:o"]},
+				{"id":"bd-w","title":"wisp","status":"open","issue_type":"task","created_at":"2026-05-02T00:00:00Z","ephemeral":true,"labels":["order-run:o"]}
+			]`), nil
 		}
 		return nil, fmt.Errorf("unexpected: %s", full)
 	}
@@ -3053,14 +3056,16 @@ func TestBdStoreListBothTiersMergesAndDedupes(t *testing.T) {
 
 func TestBdStoreListBothTiersAppliesCreatedBeforeBeforeMergedLimit(t *testing.T) {
 	before := time.Date(2026, 5, 2, 0, 0, 0, 0, time.UTC)
-	var queryCmd string
+	var calls int
+	var wispsCmd string
 	runner := func(_, name string, args ...string) ([]byte, error) {
 		full := name + " " + strings.Join(args, " ")
-		switch {
-		case strings.HasPrefix(full, "bd list "):
-			return []byte(`[]`), nil
-		case strings.HasPrefix(full, "bd query "):
-			queryCmd = full
+		if strings.HasPrefix(full, "bd list ") {
+			calls++
+			if calls == 1 {
+				return []byte(`[]`), nil
+			}
+			wispsCmd = full
 			if !strings.Contains(full, "--limit 0") {
 				return []byte(`[{"id":"bd-new","title":"newer","status":"closed","issue_type":"task","created_at":"2026-05-03T00:00:00Z","ephemeral":true,"labels":["order-run:o"]}]`), nil
 			}
@@ -3083,8 +3088,8 @@ func TestBdStoreListBothTiersAppliesCreatedBeforeBeforeMergedLimit(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(queryCmd, "--limit 0") {
-		t.Fatalf("wisps query = %q, want unlimited --limit 0 before CreatedBefore client filtering", queryCmd)
+	if !strings.Contains(wispsCmd, "--limit 0") {
+		t.Fatalf("wisps list = %q, want unlimited --limit 0 before CreatedBefore client filtering", wispsCmd)
 	}
 	if len(got) != 1 || got[0].ID != "bd-old" {
 		t.Fatalf("got = %+v, want only older wisp after CreatedBefore then Limit", got)
@@ -3116,13 +3121,15 @@ func TestBdStoreListIssuesTierDoesNotIssueQuery(t *testing.T) {
 // when the wisps tier is actually unreachable, leading to double-fire.
 func TestBdStoreListBothTiersReturnsPartialRowsWithErrorOnTierFailure(t *testing.T) {
 	t.Run("wisps tier fails", func(t *testing.T) {
+		calls := 0
 		runner := func(_, name string, args ...string) ([]byte, error) {
 			full := name + " " + strings.Join(args, " ")
-			switch {
-			case strings.HasPrefix(full, "bd list "):
+			if strings.HasPrefix(full, "bd list ") {
+				calls++
+				if calls == 2 {
+					return nil, fmt.Errorf("simulated wisps tier outage")
+				}
 				return []byte(`[{"id":"bd-i","title":"issue","status":"open","issue_type":"task","created_at":"2026-05-01T00:00:00Z","labels":["order-run:o"]}]`), nil
-			case strings.HasPrefix(full, "bd query "):
-				return nil, fmt.Errorf("simulated wisps tier outage")
 			}
 			return nil, fmt.Errorf("unexpected: %s", full)
 		}
@@ -3140,12 +3147,14 @@ func TestBdStoreListBothTiersReturnsPartialRowsWithErrorOnTierFailure(t *testing
 	})
 
 	t.Run("issues tier fails", func(t *testing.T) {
+		calls := 0
 		runner := func(_, name string, args ...string) ([]byte, error) {
 			full := name + " " + strings.Join(args, " ")
-			switch {
-			case strings.HasPrefix(full, "bd list "):
-				return nil, fmt.Errorf("simulated issues tier outage")
-			case strings.HasPrefix(full, "bd query "):
+			if strings.HasPrefix(full, "bd list ") {
+				calls++
+				if calls == 1 {
+					return nil, fmt.Errorf("simulated issues tier outage")
+				}
 				return []byte(`[{"id":"bd-w","title":"wisp","status":"open","issue_type":"task","created_at":"2026-05-02T00:00:00Z","ephemeral":true,"labels":["order-run:o"]}]`), nil
 			}
 			return nil, fmt.Errorf("unexpected: %s", full)
@@ -3178,10 +3187,10 @@ func TestBdStoreListBothTiersReturnsPartialRowsWithErrorOnTierFailure(t *testing
 	})
 }
 
-// TestBdStoreListWispsFallsBackToClientFilteringForUnsafeQueryValues pins the
-// bd-query DSL safety guard: values outside the supported bare-token subset
-// are filtered client-side instead of being emitted into a malformed query.
-func TestBdStoreListWispsFallsBackToClientFilteringForUnsafeQueryValues(t *testing.T) {
+// TestBdStoreListWispsSupportsUnsafeQueryValuesWithListArgs pins that wisp
+// lookups pass values as bd list flags instead of interpolating them into the
+// slower bd-query DSL.
+func TestBdStoreListWispsSupportsUnsafeQueryValuesWithListArgs(t *testing.T) {
 	cases := []struct {
 		name  string
 		query beads.ListQuery
@@ -3208,10 +3217,8 @@ func TestBdStoreListWispsFallsBackToClientFilteringForUnsafeQueryValues(t *testi
 			var gotCmd string
 			runner := func(_, name string, args ...string) ([]byte, error) {
 				gotCmd = name + " " + strings.Join(args, " ")
-				if strings.Contains(gotCmd, "assignee=gascity/workflows.codex-max") ||
-					strings.Contains(gotCmd, "label=order tracking") ||
-					strings.Contains(gotCmd, "type=or") {
-					t.Fatalf("unsafe value leaked into bd query: %s", gotCmd)
+				if strings.HasPrefix(gotCmd, "bd query ") {
+					t.Fatalf("wisp lookup used bd query: %s", gotCmd)
 				}
 				return []byte(`[
 					{"id":"bd-match-assignee","title":"message","status":"open","issue_type":"message","assignee":"gascity/workflows.codex-max","created_at":"2026-05-01T00:00:00Z","ephemeral":true},
@@ -3225,8 +3232,8 @@ func TestBdStoreListWispsFallsBackToClientFilteringForUnsafeQueryValues(t *testi
 			if err != nil {
 				t.Fatalf("List: %v", err)
 			}
-			if !strings.Contains(gotCmd, "bd query --json ephemeral=true") {
-				t.Fatalf("cmd = %q, want wisps query", gotCmd)
+			if !strings.HasPrefix(gotCmd, "bd list --json ") {
+				t.Fatalf("cmd = %q, want bd list", gotCmd)
 			}
 			if len(got) != 1 || got[0].ID != tc.want {
 				t.Fatalf("List() = %+v, want only %s after client filtering", got, tc.want)

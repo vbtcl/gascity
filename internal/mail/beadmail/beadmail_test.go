@@ -86,9 +86,47 @@ func TestCheckDoesNotUseMessageLabelSupplement(t *testing.T) {
 	}
 }
 
-func TestCheckSupportsSlashRecipientWithWispTier(t *testing.T) {
+func TestBdStoreMessageQueriesAvoidWispQuery(t *testing.T) {
+	runner := func(_ string, name string, args ...string) ([]byte, error) {
+		cmd := name + " " + strings.Join(args, " ")
+		if strings.HasPrefix(cmd, "bd query ") {
+			t.Fatalf("mail message query used slow wisp query path: %s", cmd)
+		}
+		if strings.Contains(cmd, "bd show --json mayor") {
+			return nil, errors.New("not found")
+		}
+		if strings.Contains(cmd, "bd list --json") && strings.Contains(cmd, "--metadata-field") {
+			return []byte(`[]`), nil
+		}
+		if strings.Contains(cmd, "bd list --json") && strings.Contains(cmd, "--type=session") {
+			return []byte(`[]`), nil
+		}
+		if strings.Contains(cmd, "--assignee=mayor") && strings.Contains(cmd, "--type=message") && strings.Contains(cmd, "--status=open") {
+			return []byte(`[{"id":"msg-1","title":"hello","description":"body","status":"open","issue_type":"message","assignee":"mayor","from":"human","created_at":"2026-01-02T03:04:05Z"}]`), nil
+		}
+		return nil, errors.New("unexpected command: " + cmd)
+	}
+	p := New(beads.NewBdStore(t.TempDir(), runner))
+
+	msgs, err := p.Check("mayor")
+	if err != nil {
+		t.Fatalf("Check: %v", err)
+	}
+	if len(msgs) != 1 || msgs[0].ID != "msg-1" {
+		t.Fatalf("Check = %#v, want msg-1", msgs)
+	}
+
+	total, unread, err := p.Count("mayor")
+	if err != nil {
+		t.Fatalf("Count: %v", err)
+	}
+	if total != 1 || unread != 1 {
+		t.Fatalf("Count = (%d, %d), want (1, 1)", total, unread)
+	}
+}
+
+func TestCheckSupportsSlashRecipientWithBdStoreList(t *testing.T) {
 	recipient := "gascity/workflows.codex-max"
-	sawWispQuery := false
 	runner := func(_ string, name string, args ...string) ([]byte, error) {
 		cmd := name + " " + strings.Join(args, " ")
 		switch {
@@ -99,16 +137,9 @@ func TestCheckSupportsSlashRecipientWithWispTier(t *testing.T) {
 		case strings.Contains(cmd, "bd list --json") && strings.Contains(cmd, "--type=session"):
 			return []byte(`[]`), nil
 		case strings.Contains(cmd, "bd list --json") && strings.Contains(cmd, "--assignee="+recipient):
-			return []byte(`[]`), nil
-		case strings.Contains(cmd, "bd query --json"):
-			sawWispQuery = true
-			if strings.Contains(cmd, "assignee="+recipient) {
-				t.Fatalf("slash recipient leaked into bd query: %s", cmd)
-			}
-			if !strings.Contains(cmd, "ephemeral=true") || !strings.Contains(cmd, "type=message") {
-				t.Fatalf("unexpected wisp query: %s", cmd)
-			}
 			return []byte(`[{"id":"msg-w","title":"hello","description":"body","status":"open","issue_type":"message","assignee":"gascity/workflows.codex-max","from":"human","created_at":"2026-01-02T03:04:05Z","ephemeral":true}]`), nil
+		case strings.Contains(cmd, "bd query --json"):
+			t.Fatalf("slash recipient mail check used slow wisp query path: %s", cmd)
 		}
 		return nil, errors.New("unexpected command: " + cmd)
 	}
@@ -117,9 +148,6 @@ func TestCheckSupportsSlashRecipientWithWispTier(t *testing.T) {
 	msgs, err := p.Check(recipient)
 	if err != nil {
 		t.Fatalf("Check: %v", err)
-	}
-	if !sawWispQuery {
-		t.Fatal("Check did not query wisps tier")
 	}
 	if len(msgs) != 1 || msgs[0].ID != "msg-w" {
 		t.Fatalf("Check = %#v, want msg-w", msgs)

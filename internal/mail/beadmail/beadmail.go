@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -162,6 +163,15 @@ func senderDisplayAddress(b beads.Bead, fallback string) string {
 // Inbox returns all unread messages for the recipient.
 func (p *Provider) Inbox(recipient string) ([]mail.Message, error) {
 	return p.filterMessages(recipient, false)
+}
+
+// InboxRoutes returns all unread messages for already-resolved mailbox routes.
+func (p *Provider) InboxRoutes(routes []string) ([]mail.Message, error) {
+	routes = normalizeRecipientRoutes(routes)
+	if len(routes) == 0 {
+		return []mail.Message{}, nil
+	}
+	return p.filterMessagesForRoutes(routes, false)
 }
 
 // Get retrieves a message by ID without marking it read.
@@ -573,7 +583,7 @@ func (p *Provider) Thread(id string) ([]mail.Message, error) {
 
 // Count returns (total, unread) message counts for a recipient.
 func (p *Provider) Count(recipient string) (int, int, error) {
-	total, unread, err := p.CountRecipients([]string{recipient})
+	total, unread, err := p.countMessagesForRoutes(p.recipientRoutes(recipient))
 	if err != nil {
 		return 0, 0, fmt.Errorf("beadmail count: %w", err)
 	}
@@ -587,6 +597,20 @@ func (p *Provider) CountRecipients(recipients []string) (int, int, error) {
 		return 0, 0, nil
 	}
 	routes := p.recipientRoutesForAll(recipients)
+	return p.CountRoutes(routes)
+}
+
+// CountRoutes returns deduplicated total and unread counts for already-resolved
+// mailbox routes.
+func (p *Provider) CountRoutes(routes []string) (int, int, error) {
+	routes = normalizeRecipientRoutes(routes)
+	if len(routes) == 0 {
+		return 0, 0, nil
+	}
+	return p.countMessagesForRoutes(routes)
+}
+
+func (p *Provider) countMessagesForRoutes(routes []string) (int, int, error) {
 	candidates, err := p.messageCandidatesForRoutes(routes)
 	if err != nil {
 		return 0, 0, fmt.Errorf("listing messages: %w", err)
@@ -611,6 +635,10 @@ func (p *Provider) CountRecipients(recipients []string) (int, int, error) {
 // When includeRead is false, messages with the "read" label are excluded.
 func (p *Provider) filterMessages(recipient string, includeRead bool) ([]mail.Message, error) {
 	routes := p.recipientRoutes(recipient)
+	return p.filterMessagesForRoutes(routes, includeRead)
+}
+
+func (p *Provider) filterMessagesForRoutes(routes []string, includeRead bool) ([]mail.Message, error) {
 	candidates, err := p.messageCandidatesForRoutes(routes)
 	if err != nil {
 		return nil, fmt.Errorf("beadmail: listing beads: %w", err)
@@ -628,7 +656,21 @@ func (p *Provider) filterMessages(recipient string, includeRead bool) ([]mail.Me
 		}
 		msgs = append(msgs, beadToMessage(b))
 	}
+	sort.Slice(msgs, func(i, j int) bool {
+		if msgs[i].CreatedAt.Equal(msgs[j].CreatedAt) {
+			return msgs[i].ID < msgs[j].ID
+		}
+		return msgs[i].CreatedAt.Before(msgs[j].CreatedAt)
+	})
 	return msgs, nil
+}
+
+func normalizeRecipientRoutes(recipients []string) []string {
+	var routes []string
+	for _, recipient := range recipients {
+		routes = appendRecipientRoute(routes, recipient)
+	}
+	return routes
 }
 
 // messageCandidates returns message beads relevant to a recipient using

@@ -804,6 +804,7 @@ func sessionMailboxAddresses(b beads.Bead) []string {
 	}
 	add(sessionMailboxAddress(b))
 	add(b.ID)
+	add(b.Metadata["session_name"])
 	for _, alias := range session.AliasHistory(b.Metadata) {
 		add(alias)
 	}
@@ -1286,6 +1287,14 @@ func collectMailCounts(count func(string) (int, int, error), recipients []string
 
 type multiRecipientMailCounter interface {
 	CountRecipients([]string) (int, int, error)
+}
+
+type routeMailInboxer interface {
+	InboxRoutes([]string) ([]mail.Message, error)
+}
+
+type routeMailCounter interface {
+	CountRoutes([]string) (int, int, error)
 }
 
 func newMailSendCmd(stdout, stderr io.Writer) *cobra.Command {
@@ -1815,7 +1824,13 @@ func doMailInboxTarget(mp mail.Provider, target resolvedMailTarget, stdout, stde
 }
 
 func doMailInboxTargetWithJSON(mp mail.Provider, target resolvedMailTarget, jsonOut bool, stdout, stderr io.Writer) int {
-	messages, err := collectMailMessages(mp.Inbox, target.recipients)
+	var messages []mail.Message
+	var err error
+	if inboxer, ok := mp.(routeMailInboxer); ok {
+		messages, err = inboxer.InboxRoutes(target.recipients)
+	} else {
+		messages, err = collectMailMessages(mp.Inbox, target.recipients)
+	}
 	if err != nil {
 		fmt.Fprintf(stderr, "gc mail inbox: %v\n", err) //nolint:errcheck // best-effort stderr
 		return 1
@@ -2483,7 +2498,9 @@ func doMailCountTarget(mp mail.Provider, target resolvedMailTarget, stdout, stde
 func doMailCountTargetWithJSON(mp mail.Provider, target resolvedMailTarget, jsonOut bool, stdout, stderr io.Writer) int {
 	var total, unread int
 	var err error
-	if counter, ok := mp.(multiRecipientMailCounter); ok {
+	if counter, ok := mp.(routeMailCounter); ok {
+		total, unread, err = counter.CountRoutes(target.recipients)
+	} else if counter, ok := mp.(multiRecipientMailCounter); ok {
 		total, unread, err = counter.CountRecipients(target.recipients)
 	} else {
 		total, unread, err = collectMailCounts(mp.Count, target.recipients)
