@@ -420,6 +420,66 @@ func SessionDrainAckedWithAssignedWorkPayloadJSON(sessionID, beadID, template, b
 	return b
 }
 
+// GitHubPREventPayload is the normalized typed payload for GitHub PR
+// readiness events. GitHubPRUpdated, GitHubPRCheckFailed, and
+// GitHubPRConflicted share this shape; the event type identifies the
+// actionable state.
+type GitHubPREventPayload struct {
+	DeliveryID      string `json:"delivery_id" doc:"GitHub X-GitHub-Delivery identifier."`
+	SourceEvent     string `json:"source_event" doc:"GitHub webhook event name, e.g. pull_request or check_suite."`
+	Action          string `json:"action,omitempty" doc:"GitHub webhook action."`
+	Monitor         string `json:"monitor" doc:"Configured GitHub PR monitor name."`
+	Rig             string `json:"rig" doc:"Configured owning rig for repair work."`
+	RepairRoute     string `json:"repair_route" doc:"Configured repair route target."`
+	Owner           string `json:"owner" doc:"Repository owner or organization."`
+	Repo            string `json:"repo" doc:"Repository name."`
+	FullName        string `json:"full_name" doc:"Repository full name in owner/repo form."`
+	PRNumber        int    `json:"pr_number" doc:"Pull request number."`
+	PRURL           string `json:"pr_url,omitempty" doc:"Pull request browser URL."`
+	PRTitle         string `json:"pr_title,omitempty" doc:"Pull request title."`
+	PRState         string `json:"pr_state,omitempty" doc:"Pull request state."`
+	BaseBranch      string `json:"base_branch" doc:"Pull request base branch."`
+	BaseSHA         string `json:"base_sha,omitempty" doc:"Base branch SHA from the webhook payload."`
+	HeadRef         string `json:"head_ref,omitempty" doc:"Pull request head branch."`
+	HeadSHA         string `json:"head_sha,omitempty" doc:"Pull request or check head SHA."`
+	HeadRepo        string `json:"head_repo,omitempty" doc:"Pull request head repository full name."`
+	Draft           bool   `json:"draft,omitempty" doc:"Whether the pull request is a draft."`
+	Mergeable       *bool  `json:"mergeable,omitempty" doc:"GitHub mergeable flag when present."`
+	MergeableState  string `json:"mergeable_state,omitempty" doc:"GitHub mergeable_state value when present."`
+	CheckName       string `json:"check_name,omitempty" doc:"Failed check name or check kind."`
+	CheckStatus     string `json:"check_status,omitempty" doc:"GitHub check status."`
+	CheckConclusion string `json:"check_conclusion,omitempty" doc:"GitHub check conclusion."`
+	CheckURL        string `json:"check_url,omitempty" doc:"GitHub check browser URL."`
+	FailureKind     string `json:"failure_kind,omitempty" doc:"Normalized failure kind, e.g. check_failed or merge_conflict."`
+	Sender          string `json:"sender,omitempty" doc:"GitHub sender login."`
+}
+
+// IsEventPayload marks GitHubPREventPayload as an events.Payload variant.
+func (GitHubPREventPayload) IsEventPayload() {}
+
+// GitHubMergeGroupEventPayload is the normalized typed payload for GitHub
+// merge queue / merge group readiness failures.
+type GitHubMergeGroupEventPayload struct {
+	DeliveryID  string `json:"delivery_id" doc:"GitHub X-GitHub-Delivery identifier."`
+	SourceEvent string `json:"source_event" doc:"GitHub webhook event name."`
+	Action      string `json:"action,omitempty" doc:"GitHub webhook action."`
+	Monitor     string `json:"monitor" doc:"Configured GitHub PR monitor name."`
+	Rig         string `json:"rig" doc:"Configured owning rig for repair work."`
+	RepairRoute string `json:"repair_route" doc:"Configured repair route target."`
+	Owner       string `json:"owner" doc:"Repository owner or organization."`
+	Repo        string `json:"repo" doc:"Repository name."`
+	FullName    string `json:"full_name" doc:"Repository full name in owner/repo form."`
+	BaseBranch  string `json:"base_branch" doc:"Merge group base branch."`
+	HeadRef     string `json:"head_ref,omitempty" doc:"Merge group head ref."`
+	HeadSHA     string `json:"head_sha,omitempty" doc:"Merge group head SHA."`
+	URL         string `json:"url,omitempty" doc:"Browser URL for the merge group or related PR when present."`
+	FailureKind string `json:"failure_kind" doc:"Normalized failure kind."`
+	Sender      string `json:"sender,omitempty" doc:"GitHub sender login."`
+}
+
+// IsEventPayload marks GitHubMergeGroupEventPayload as an events.Payload variant.
+func (GitHubMergeGroupEventPayload) IsEventPayload() {}
+
 func init() {
 	// mail.* — all seven types share one payload shape.
 	events.RegisterPayload(events.MailSent, MailEventPayload{})
@@ -483,4 +543,10 @@ func init() {
 	// gc.store.maintenance.* — supervisor StoreMaintenanceLoop outcomes.
 	events.RegisterPayload(events.StoreMaintenanceDone, events.StoreMaintenanceDonePayload{})
 	events.RegisterPayload(events.StoreMaintenanceFailed, events.StoreMaintenanceFailedPayload{})
+
+	// github.* — signed GitHub PR readiness webhook outcomes.
+	events.RegisterPayload(events.GitHubPRUpdated, GitHubPREventPayload{})
+	events.RegisterPayload(events.GitHubPRCheckFailed, GitHubPREventPayload{})
+	events.RegisterPayload(events.GitHubPRConflicted, GitHubPREventPayload{})
+	events.RegisterPayload(events.GitHubMergeGroupFailed, GitHubMergeGroupEventPayload{})
 }

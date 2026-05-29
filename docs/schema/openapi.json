@@ -2041,6 +2041,12 @@
             "$ref": "#/components/schemas/CityUnregisterSucceededPayload"
           },
           {
+            "$ref": "#/components/schemas/GitHubMergeGroupEventPayload"
+          },
+          {
+            "$ref": "#/components/schemas/GitHubPREventPayload"
+          },
+          {
             "$ref": "#/components/schemas/GroupCreatedEventPayload"
           },
           {
@@ -3071,6 +3077,483 @@
           "name",
           "type"
         ],
+        "type": "object"
+      },
+      "GitHubCheckPullRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "base": {
+            "$ref": "#/components/schemas/GitHubPRRef"
+          },
+          "head": {
+            "$ref": "#/components/schemas/GitHubPRRef"
+          },
+          "html_url": {
+            "type": "string"
+          },
+          "number": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "url": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "GitHubCheckRun": {
+        "additionalProperties": false,
+        "properties": {
+          "conclusion": {
+            "type": "string"
+          },
+          "head_branch": {
+            "type": "string"
+          },
+          "head_sha": {
+            "type": "string"
+          },
+          "html_url": {
+            "type": "string"
+          },
+          "id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "pull_requests": {
+            "items": {
+              "$ref": "#/components/schemas/GitHubCheckPullRequest"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "GitHubCheckSuite": {
+        "additionalProperties": false,
+        "properties": {
+          "conclusion": {
+            "type": "string"
+          },
+          "head_branch": {
+            "type": "string"
+          },
+          "head_sha": {
+            "type": "string"
+          },
+          "html_url": {
+            "type": "string"
+          },
+          "id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "pull_requests": {
+            "items": {
+              "$ref": "#/components/schemas/GitHubCheckPullRequest"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "GitHubMergeGroup": {
+        "additionalProperties": false,
+        "properties": {
+          "base_ref": {
+            "type": "string"
+          },
+          "head_ref": {
+            "type": "string"
+          },
+          "head_sha": {
+            "type": "string"
+          },
+          "html_url": {
+            "type": "string"
+          },
+          "web_url": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "GitHubMergeGroupEventPayload": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "description": "GitHub webhook action.",
+            "type": "string"
+          },
+          "base_branch": {
+            "description": "Merge group base branch.",
+            "type": "string"
+          },
+          "delivery_id": {
+            "description": "GitHub X-GitHub-Delivery identifier.",
+            "type": "string"
+          },
+          "failure_kind": {
+            "description": "Normalized failure kind.",
+            "type": "string"
+          },
+          "full_name": {
+            "description": "Repository full name in owner/repo form.",
+            "type": "string"
+          },
+          "head_ref": {
+            "description": "Merge group head ref.",
+            "type": "string"
+          },
+          "head_sha": {
+            "description": "Merge group head SHA.",
+            "type": "string"
+          },
+          "monitor": {
+            "description": "Configured GitHub PR monitor name.",
+            "type": "string"
+          },
+          "owner": {
+            "description": "Repository owner or organization.",
+            "type": "string"
+          },
+          "repair_route": {
+            "description": "Configured repair route target.",
+            "type": "string"
+          },
+          "repo": {
+            "description": "Repository name.",
+            "type": "string"
+          },
+          "rig": {
+            "description": "Configured owning rig for repair work.",
+            "type": "string"
+          },
+          "sender": {
+            "description": "GitHub sender login.",
+            "type": "string"
+          },
+          "source_event": {
+            "description": "GitHub webhook event name.",
+            "type": "string"
+          },
+          "url": {
+            "description": "Browser URL for the merge group or related PR when present.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "delivery_id",
+          "source_event",
+          "monitor",
+          "rig",
+          "repair_route",
+          "owner",
+          "repo",
+          "full_name",
+          "base_branch",
+          "failure_kind"
+        ],
+        "type": "object"
+      },
+      "GitHubPREventPayload": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "description": "GitHub webhook action.",
+            "type": "string"
+          },
+          "base_branch": {
+            "description": "Pull request base branch.",
+            "type": "string"
+          },
+          "base_sha": {
+            "description": "Base branch SHA from the webhook payload.",
+            "type": "string"
+          },
+          "check_conclusion": {
+            "description": "GitHub check conclusion.",
+            "type": "string"
+          },
+          "check_name": {
+            "description": "Failed check name or check kind.",
+            "type": "string"
+          },
+          "check_status": {
+            "description": "GitHub check status.",
+            "type": "string"
+          },
+          "check_url": {
+            "description": "GitHub check browser URL.",
+            "type": "string"
+          },
+          "delivery_id": {
+            "description": "GitHub X-GitHub-Delivery identifier.",
+            "type": "string"
+          },
+          "draft": {
+            "description": "Whether the pull request is a draft.",
+            "type": "boolean"
+          },
+          "failure_kind": {
+            "description": "Normalized failure kind, e.g. check_failed or merge_conflict.",
+            "type": "string"
+          },
+          "full_name": {
+            "description": "Repository full name in owner/repo form.",
+            "type": "string"
+          },
+          "head_ref": {
+            "description": "Pull request head branch.",
+            "type": "string"
+          },
+          "head_repo": {
+            "description": "Pull request head repository full name.",
+            "type": "string"
+          },
+          "head_sha": {
+            "description": "Pull request or check head SHA.",
+            "type": "string"
+          },
+          "mergeable": {
+            "description": "GitHub mergeable flag when present.",
+            "type": "boolean"
+          },
+          "mergeable_state": {
+            "description": "GitHub mergeable_state value when present.",
+            "type": "string"
+          },
+          "monitor": {
+            "description": "Configured GitHub PR monitor name.",
+            "type": "string"
+          },
+          "owner": {
+            "description": "Repository owner or organization.",
+            "type": "string"
+          },
+          "pr_number": {
+            "description": "Pull request number.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "pr_state": {
+            "description": "Pull request state.",
+            "type": "string"
+          },
+          "pr_title": {
+            "description": "Pull request title.",
+            "type": "string"
+          },
+          "pr_url": {
+            "description": "Pull request browser URL.",
+            "type": "string"
+          },
+          "repair_route": {
+            "description": "Configured repair route target.",
+            "type": "string"
+          },
+          "repo": {
+            "description": "Repository name.",
+            "type": "string"
+          },
+          "rig": {
+            "description": "Configured owning rig for repair work.",
+            "type": "string"
+          },
+          "sender": {
+            "description": "GitHub sender login.",
+            "type": "string"
+          },
+          "source_event": {
+            "description": "GitHub webhook event name, e.g. pull_request or check_suite.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "delivery_id",
+          "source_event",
+          "monitor",
+          "rig",
+          "repair_route",
+          "owner",
+          "repo",
+          "full_name",
+          "pr_number",
+          "base_branch"
+        ],
+        "type": "object"
+      },
+      "GitHubPRRef": {
+        "additionalProperties": false,
+        "properties": {
+          "ref": {
+            "type": "string"
+          },
+          "repo": {
+            "$ref": "#/components/schemas/GitHubRefRepo"
+          },
+          "sha": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "GitHubPullRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "base": {
+            "$ref": "#/components/schemas/GitHubPRRef"
+          },
+          "draft": {
+            "type": "boolean"
+          },
+          "head": {
+            "$ref": "#/components/schemas/GitHubPRRef"
+          },
+          "html_url": {
+            "type": "string"
+          },
+          "mergeable": {
+            "type": "boolean"
+          },
+          "mergeable_state": {
+            "type": "string"
+          },
+          "number": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "state": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "GitHubRefRepo": {
+        "additionalProperties": false,
+        "properties": {
+          "full_name": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "GitHubRepository": {
+        "additionalProperties": false,
+        "properties": {
+          "full_name": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "owner": {
+            "$ref": "#/components/schemas/GitHubRepositoryOwner"
+          }
+        },
+        "type": "object"
+      },
+      "GitHubRepositoryOwner": {
+        "additionalProperties": false,
+        "properties": {
+          "login": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "GitHubWebhookPayload": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "type": "string"
+          },
+          "check_run": {
+            "$ref": "#/components/schemas/GitHubCheckRun"
+          },
+          "check_suite": {
+            "$ref": "#/components/schemas/GitHubCheckSuite"
+          },
+          "merge_group": {
+            "$ref": "#/components/schemas/GitHubMergeGroup"
+          },
+          "pull_request": {
+            "$ref": "#/components/schemas/GitHubPullRequest"
+          },
+          "repository": {
+            "$ref": "#/components/schemas/GitHubRepository"
+          },
+          "sender": {
+            "$ref": "#/components/schemas/GitHubWebhookSender"
+          }
+        },
+        "required": [
+          "repository"
+        ],
+        "type": "object"
+      },
+      "GitHubWebhookResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "event_type": {
+            "description": "Recorded Gas City event type.",
+            "type": "string"
+          },
+          "monitor": {
+            "description": "Configured monitor that accepted the webhook.",
+            "type": "string"
+          },
+          "reason": {
+            "description": "Reason when the webhook was accepted but ignored.",
+            "type": "string"
+          },
+          "recorded": {
+            "description": "Whether the webhook produced a Gas City event.",
+            "type": "boolean"
+          },
+          "status": {
+            "description": "Ingestion status.",
+            "enum": [
+              "recorded",
+              "ignored"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "recorded",
+          "status"
+        ],
+        "type": "object"
+      },
+      "GitHubWebhookSender": {
+        "additionalProperties": false,
+        "properties": {
+          "login": {
+            "type": "string"
+          }
+        },
         "type": "object"
       },
       "GitStatus": {
@@ -7356,6 +7839,10 @@
             "extmsg.unbound": "#/components/schemas/TypedEventStreamEnvelopeExtmsgUnbound",
             "gc.store.maintenance.done": "#/components/schemas/TypedEventStreamEnvelopeGcStoreMaintenanceDone",
             "gc.store.maintenance.failed": "#/components/schemas/TypedEventStreamEnvelopeGcStoreMaintenanceFailed",
+            "github.merge_group.failed": "#/components/schemas/TypedEventStreamEnvelopeGithubMergeGroupFailed",
+            "github.pr.check_failed": "#/components/schemas/TypedEventStreamEnvelopeGithubPrCheckFailed",
+            "github.pr.conflicted": "#/components/schemas/TypedEventStreamEnvelopeGithubPrConflicted",
+            "github.pr.updated": "#/components/schemas/TypedEventStreamEnvelopeGithubPrUpdated",
             "mail.archived": "#/components/schemas/TypedEventStreamEnvelopeMailArchived",
             "mail.deleted": "#/components/schemas/TypedEventStreamEnvelopeMailDeleted",
             "mail.marked_read": "#/components/schemas/TypedEventStreamEnvelopeMailMarkedRead",
@@ -7457,6 +7944,18 @@
           },
           {
             "$ref": "#/components/schemas/TypedEventStreamEnvelopeGcStoreMaintenanceFailed"
+          },
+          {
+            "$ref": "#/components/schemas/TypedEventStreamEnvelopeGithubMergeGroupFailed"
+          },
+          {
+            "$ref": "#/components/schemas/TypedEventStreamEnvelopeGithubPrCheckFailed"
+          },
+          {
+            "$ref": "#/components/schemas/TypedEventStreamEnvelopeGithubPrConflicted"
+          },
+          {
+            "$ref": "#/components/schemas/TypedEventStreamEnvelopeGithubPrUpdated"
           },
           {
             "$ref": "#/components/schemas/TypedEventStreamEnvelopeMailArchived"
@@ -8111,7 +8610,11 @@
                 "events.rotated",
                 "gc.store.maintenance.done",
                 "gc.store.maintenance.failed",
-                "pg.credential_resolved"
+                "pg.credential_resolved",
+                "github.pr.updated",
+                "github.pr.check_failed",
+                "github.pr.conflicted",
+                "github.merge_group.failed"
               ]
             },
             "type": "string"
@@ -8548,6 +9051,174 @@
           "payload"
         ],
         "title": "TypedEventStreamEnvelope gc.store.maintenance.failed",
+        "type": "object"
+      },
+      "TypedEventStreamEnvelopeGithubMergeGroupFailed": {
+        "additionalProperties": false,
+        "properties": {
+          "actor": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "payload": {
+            "$ref": "#/components/schemas/GitHubMergeGroupEventPayload"
+          },
+          "seq": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "subject": {
+            "type": "string"
+          },
+          "ts": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "type": {
+            "const": "github.merge_group.failed",
+            "type": "string"
+          },
+          "workflow": {
+            "$ref": "#/components/schemas/WorkflowEventProjection"
+          }
+        },
+        "required": [
+          "seq",
+          "type",
+          "ts",
+          "actor",
+          "payload"
+        ],
+        "title": "TypedEventStreamEnvelope github.merge_group.failed",
+        "type": "object"
+      },
+      "TypedEventStreamEnvelopeGithubPrCheckFailed": {
+        "additionalProperties": false,
+        "properties": {
+          "actor": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "payload": {
+            "$ref": "#/components/schemas/GitHubPREventPayload"
+          },
+          "seq": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "subject": {
+            "type": "string"
+          },
+          "ts": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "type": {
+            "const": "github.pr.check_failed",
+            "type": "string"
+          },
+          "workflow": {
+            "$ref": "#/components/schemas/WorkflowEventProjection"
+          }
+        },
+        "required": [
+          "seq",
+          "type",
+          "ts",
+          "actor",
+          "payload"
+        ],
+        "title": "TypedEventStreamEnvelope github.pr.check_failed",
+        "type": "object"
+      },
+      "TypedEventStreamEnvelopeGithubPrConflicted": {
+        "additionalProperties": false,
+        "properties": {
+          "actor": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "payload": {
+            "$ref": "#/components/schemas/GitHubPREventPayload"
+          },
+          "seq": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "subject": {
+            "type": "string"
+          },
+          "ts": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "type": {
+            "const": "github.pr.conflicted",
+            "type": "string"
+          },
+          "workflow": {
+            "$ref": "#/components/schemas/WorkflowEventProjection"
+          }
+        },
+        "required": [
+          "seq",
+          "type",
+          "ts",
+          "actor",
+          "payload"
+        ],
+        "title": "TypedEventStreamEnvelope github.pr.conflicted",
+        "type": "object"
+      },
+      "TypedEventStreamEnvelopeGithubPrUpdated": {
+        "additionalProperties": false,
+        "properties": {
+          "actor": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "payload": {
+            "$ref": "#/components/schemas/GitHubPREventPayload"
+          },
+          "seq": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "subject": {
+            "type": "string"
+          },
+          "ts": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "type": {
+            "const": "github.pr.updated",
+            "type": "string"
+          },
+          "workflow": {
+            "$ref": "#/components/schemas/WorkflowEventProjection"
+          }
+        },
+        "required": [
+          "seq",
+          "type",
+          "ts",
+          "actor",
+          "payload"
+        ],
+        "title": "TypedEventStreamEnvelope github.pr.updated",
         "type": "object"
       },
       "TypedEventStreamEnvelopeMailArchived": {
@@ -10045,6 +10716,10 @@
             "extmsg.unbound": "#/components/schemas/TypedTaggedEventStreamEnvelopeExtmsgUnbound",
             "gc.store.maintenance.done": "#/components/schemas/TypedTaggedEventStreamEnvelopeGcStoreMaintenanceDone",
             "gc.store.maintenance.failed": "#/components/schemas/TypedTaggedEventStreamEnvelopeGcStoreMaintenanceFailed",
+            "github.merge_group.failed": "#/components/schemas/TypedTaggedEventStreamEnvelopeGithubMergeGroupFailed",
+            "github.pr.check_failed": "#/components/schemas/TypedTaggedEventStreamEnvelopeGithubPrCheckFailed",
+            "github.pr.conflicted": "#/components/schemas/TypedTaggedEventStreamEnvelopeGithubPrConflicted",
+            "github.pr.updated": "#/components/schemas/TypedTaggedEventStreamEnvelopeGithubPrUpdated",
             "mail.archived": "#/components/schemas/TypedTaggedEventStreamEnvelopeMailArchived",
             "mail.deleted": "#/components/schemas/TypedTaggedEventStreamEnvelopeMailDeleted",
             "mail.marked_read": "#/components/schemas/TypedTaggedEventStreamEnvelopeMailMarkedRead",
@@ -10146,6 +10821,18 @@
           },
           {
             "$ref": "#/components/schemas/TypedTaggedEventStreamEnvelopeGcStoreMaintenanceFailed"
+          },
+          {
+            "$ref": "#/components/schemas/TypedTaggedEventStreamEnvelopeGithubMergeGroupFailed"
+          },
+          {
+            "$ref": "#/components/schemas/TypedTaggedEventStreamEnvelopeGithubPrCheckFailed"
+          },
+          {
+            "$ref": "#/components/schemas/TypedTaggedEventStreamEnvelopeGithubPrConflicted"
+          },
+          {
+            "$ref": "#/components/schemas/TypedTaggedEventStreamEnvelopeGithubPrUpdated"
           },
           {
             "$ref": "#/components/schemas/TypedTaggedEventStreamEnvelopeMailArchived"
@@ -10847,7 +11534,11 @@
                 "events.rotated",
                 "gc.store.maintenance.done",
                 "gc.store.maintenance.failed",
-                "pg.credential_resolved"
+                "pg.credential_resolved",
+                "github.pr.updated",
+                "github.pr.check_failed",
+                "github.pr.conflicted",
+                "github.merge_group.failed"
               ]
             },
             "type": "string"
@@ -11325,6 +12016,190 @@
           "city"
         ],
         "title": "TypedTaggedEventStreamEnvelope gc.store.maintenance.failed",
+        "type": "object"
+      },
+      "TypedTaggedEventStreamEnvelopeGithubMergeGroupFailed": {
+        "additionalProperties": false,
+        "properties": {
+          "actor": {
+            "type": "string"
+          },
+          "city": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "payload": {
+            "$ref": "#/components/schemas/GitHubMergeGroupEventPayload"
+          },
+          "seq": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "subject": {
+            "type": "string"
+          },
+          "ts": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "type": {
+            "const": "github.merge_group.failed",
+            "type": "string"
+          },
+          "workflow": {
+            "$ref": "#/components/schemas/WorkflowEventProjection"
+          }
+        },
+        "required": [
+          "seq",
+          "type",
+          "ts",
+          "actor",
+          "payload",
+          "city"
+        ],
+        "title": "TypedTaggedEventStreamEnvelope github.merge_group.failed",
+        "type": "object"
+      },
+      "TypedTaggedEventStreamEnvelopeGithubPrCheckFailed": {
+        "additionalProperties": false,
+        "properties": {
+          "actor": {
+            "type": "string"
+          },
+          "city": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "payload": {
+            "$ref": "#/components/schemas/GitHubPREventPayload"
+          },
+          "seq": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "subject": {
+            "type": "string"
+          },
+          "ts": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "type": {
+            "const": "github.pr.check_failed",
+            "type": "string"
+          },
+          "workflow": {
+            "$ref": "#/components/schemas/WorkflowEventProjection"
+          }
+        },
+        "required": [
+          "seq",
+          "type",
+          "ts",
+          "actor",
+          "payload",
+          "city"
+        ],
+        "title": "TypedTaggedEventStreamEnvelope github.pr.check_failed",
+        "type": "object"
+      },
+      "TypedTaggedEventStreamEnvelopeGithubPrConflicted": {
+        "additionalProperties": false,
+        "properties": {
+          "actor": {
+            "type": "string"
+          },
+          "city": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "payload": {
+            "$ref": "#/components/schemas/GitHubPREventPayload"
+          },
+          "seq": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "subject": {
+            "type": "string"
+          },
+          "ts": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "type": {
+            "const": "github.pr.conflicted",
+            "type": "string"
+          },
+          "workflow": {
+            "$ref": "#/components/schemas/WorkflowEventProjection"
+          }
+        },
+        "required": [
+          "seq",
+          "type",
+          "ts",
+          "actor",
+          "payload",
+          "city"
+        ],
+        "title": "TypedTaggedEventStreamEnvelope github.pr.conflicted",
+        "type": "object"
+      },
+      "TypedTaggedEventStreamEnvelopeGithubPrUpdated": {
+        "additionalProperties": false,
+        "properties": {
+          "actor": {
+            "type": "string"
+          },
+          "city": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "payload": {
+            "$ref": "#/components/schemas/GitHubPREventPayload"
+          },
+          "seq": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "subject": {
+            "type": "string"
+          },
+          "ts": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "type": {
+            "const": "github.pr.updated",
+            "type": "string"
+          },
+          "workflow": {
+            "$ref": "#/components/schemas/WorkflowEventProjection"
+          }
+        },
+        "required": [
+          "seq",
+          "type",
+          "ts",
+          "actor",
+          "payload",
+          "city"
+        ],
+        "title": "TypedTaggedEventStreamEnvelope github.pr.updated",
         "type": "object"
       },
       "TypedTaggedEventStreamEnvelopeMailArchived": {
@@ -18927,6 +19802,184 @@
           }
         },
         "summary": "Get v0 city by city name formulas by name runs"
+      }
+    },
+    "/v0/city/{cityName}/github/webhook": {
+      "post": {
+        "description": "Validates X-Hub-Signature-256 against the configured repository monitor secret, decodes supported repository events, and records normalized PR readiness events.",
+        "operationId": "github-webhook",
+        "parameters": [
+          {
+            "description": "City name.",
+            "in": "path",
+            "name": "cityName",
+            "required": true,
+            "schema": {
+              "description": "City name.",
+              "minLength": 1,
+              "pattern": "\\S",
+              "type": "string"
+            }
+          },
+          {
+            "description": "GitHub webhook event name.",
+            "in": "header",
+            "name": "X-GitHub-Event",
+            "required": true,
+            "schema": {
+              "description": "GitHub webhook event name.",
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
+            "description": "GitHub delivery identifier.",
+            "in": "header",
+            "name": "X-GitHub-Delivery",
+            "required": true,
+            "schema": {
+              "description": "GitHub delivery identifier.",
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
+            "description": "GitHub SHA-256 HMAC signature in sha256=\u003chex\u003e form.",
+            "in": "header",
+            "name": "X-Hub-Signature-256",
+            "required": true,
+            "schema": {
+              "description": "GitHub SHA-256 HMAC signature in sha256=\u003chex\u003e form.",
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GitHubWebhookPayload"
+              }
+            },
+            "application/octet-stream": {
+              "schema": {
+                "contentMediaType": "application/octet-stream",
+                "format": "binary",
+                "type": "string"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GitHubWebhookResponse"
+                }
+              }
+            },
+            "description": "Accepted",
+            "headers": {
+              "X-GC-Request-Id": {
+                "$ref": "#/components/headers/X-GC-Request-Id"
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Bad Request",
+            "headers": {
+              "X-GC-Request-Id": {
+                "$ref": "#/components/headers/X-GC-Request-Id"
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unauthorized",
+            "headers": {
+              "X-GC-Request-Id": {
+                "$ref": "#/components/headers/X-GC-Request-Id"
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Not Found",
+            "headers": {
+              "X-GC-Request-Id": {
+                "$ref": "#/components/headers/X-GC-Request-Id"
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unprocessable Entity",
+            "headers": {
+              "X-GC-Request-Id": {
+                "$ref": "#/components/headers/X-GC-Request-Id"
+              }
+            }
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Internal Server Error",
+            "headers": {
+              "X-GC-Request-Id": {
+                "$ref": "#/components/headers/X-GC-Request-Id"
+              }
+            }
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Service Unavailable",
+            "headers": {
+              "X-GC-Request-Id": {
+                "$ref": "#/components/headers/X-GC-Request-Id"
+              }
+            }
+          }
+        },
+        "summary": "Ingest a signed GitHub repository webhook"
       }
     },
     "/v0/city/{cityName}/health": {

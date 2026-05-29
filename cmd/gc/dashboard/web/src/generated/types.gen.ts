@@ -755,7 +755,7 @@ export type EventEmitRequest = {
     type: string;
 };
 
-export type EventPayload = AdapterEventPayload | BeadEventPayload | BoundEventPayload | CityCreateSucceededPayload | CityLifecyclePayload | CityUnregisterSucceededPayload | GroupCreatedEventPayload | InboundEventPayload | MailEventPayload | NoPayload | OutboundEventPayload | PostgresCredentialResolvedPayload | ProjectIdentityStampedPayload | RequestFailedPayload | RotatedPayload | SessionCreateSucceededPayload | SessionDrainAckedWithAssignedWorkPayload | SessionLifecyclePayload | SessionMessageSucceededPayload | SessionSubmitSucceededPayload | StoreMaintenanceDonePayload | StoreMaintenanceFailedPayload | SupervisorFsPressureSkippedTickPayload | SupervisorShutdownPayload | UnboundEventPayload | WorkerOperationEventPayload;
+export type EventPayload = AdapterEventPayload | BeadEventPayload | BoundEventPayload | CityCreateSucceededPayload | CityLifecyclePayload | CityUnregisterSucceededPayload | GitHubMergeGroupEventPayload | GitHubPrEventPayload | GroupCreatedEventPayload | InboundEventPayload | MailEventPayload | NoPayload | OutboundEventPayload | PostgresCredentialResolvedPayload | ProjectIdentityStampedPayload | RequestFailedPayload | RotatedPayload | SessionCreateSucceededPayload | SessionDrainAckedWithAssignedWorkPayload | SessionLifecyclePayload | SessionMessageSucceededPayload | SessionSubmitSucceededPayload | StoreMaintenanceDonePayload | StoreMaintenanceFailedPayload | SupervisorFsPressureSkippedTickPayload | SupervisorShutdownPayload | UnboundEventPayload | WorkerOperationEventPayload;
 
 export type EventRotateAnchor = {
     /**
@@ -1184,6 +1184,287 @@ export type FormulaVarDefResponse = {
     pattern?: string;
     required?: boolean;
     type: string;
+};
+
+export type GitHubCheckPullRequest = {
+    base?: GitHubPrRef;
+    head?: GitHubPrRef;
+    html_url?: string;
+    number?: number;
+    url?: string;
+};
+
+export type GitHubCheckRun = {
+    conclusion?: string;
+    head_branch?: string;
+    head_sha?: string;
+    html_url?: string;
+    id?: number;
+    name?: string;
+    pull_requests?: Array<GitHubCheckPullRequest> | null;
+    status?: string;
+};
+
+export type GitHubCheckSuite = {
+    conclusion?: string;
+    head_branch?: string;
+    head_sha?: string;
+    html_url?: string;
+    id?: number;
+    pull_requests?: Array<GitHubCheckPullRequest> | null;
+    status?: string;
+};
+
+export type GitHubMergeGroup = {
+    base_ref?: string;
+    head_ref?: string;
+    head_sha?: string;
+    html_url?: string;
+    web_url?: string;
+};
+
+export type GitHubMergeGroupEventPayload = {
+    /**
+     * GitHub webhook action.
+     */
+    action?: string;
+    /**
+     * Merge group base branch.
+     */
+    base_branch: string;
+    /**
+     * GitHub X-GitHub-Delivery identifier.
+     */
+    delivery_id: string;
+    /**
+     * Normalized failure kind.
+     */
+    failure_kind: string;
+    /**
+     * Repository full name in owner/repo form.
+     */
+    full_name: string;
+    /**
+     * Merge group head ref.
+     */
+    head_ref?: string;
+    /**
+     * Merge group head SHA.
+     */
+    head_sha?: string;
+    /**
+     * Configured GitHub PR monitor name.
+     */
+    monitor: string;
+    /**
+     * Repository owner or organization.
+     */
+    owner: string;
+    /**
+     * Configured repair route target.
+     */
+    repair_route: string;
+    /**
+     * Repository name.
+     */
+    repo: string;
+    /**
+     * Configured owning rig for repair work.
+     */
+    rig: string;
+    /**
+     * GitHub sender login.
+     */
+    sender?: string;
+    /**
+     * GitHub webhook event name.
+     */
+    source_event: string;
+    /**
+     * Browser URL for the merge group or related PR when present.
+     */
+    url?: string;
+};
+
+export type GitHubPrEventPayload = {
+    /**
+     * GitHub webhook action.
+     */
+    action?: string;
+    /**
+     * Pull request base branch.
+     */
+    base_branch: string;
+    /**
+     * Base branch SHA from the webhook payload.
+     */
+    base_sha?: string;
+    /**
+     * GitHub check conclusion.
+     */
+    check_conclusion?: string;
+    /**
+     * Failed check name or check kind.
+     */
+    check_name?: string;
+    /**
+     * GitHub check status.
+     */
+    check_status?: string;
+    /**
+     * GitHub check browser URL.
+     */
+    check_url?: string;
+    /**
+     * GitHub X-GitHub-Delivery identifier.
+     */
+    delivery_id: string;
+    /**
+     * Whether the pull request is a draft.
+     */
+    draft?: boolean;
+    /**
+     * Normalized failure kind, e.g. check_failed or merge_conflict.
+     */
+    failure_kind?: string;
+    /**
+     * Repository full name in owner/repo form.
+     */
+    full_name: string;
+    /**
+     * Pull request head branch.
+     */
+    head_ref?: string;
+    /**
+     * Pull request head repository full name.
+     */
+    head_repo?: string;
+    /**
+     * Pull request or check head SHA.
+     */
+    head_sha?: string;
+    /**
+     * GitHub mergeable flag when present.
+     */
+    mergeable?: boolean;
+    /**
+     * GitHub mergeable_state value when present.
+     */
+    mergeable_state?: string;
+    /**
+     * Configured GitHub PR monitor name.
+     */
+    monitor: string;
+    /**
+     * Repository owner or organization.
+     */
+    owner: string;
+    /**
+     * Pull request number.
+     */
+    pr_number: number;
+    /**
+     * Pull request state.
+     */
+    pr_state?: string;
+    /**
+     * Pull request title.
+     */
+    pr_title?: string;
+    /**
+     * Pull request browser URL.
+     */
+    pr_url?: string;
+    /**
+     * Configured repair route target.
+     */
+    repair_route: string;
+    /**
+     * Repository name.
+     */
+    repo: string;
+    /**
+     * Configured owning rig for repair work.
+     */
+    rig: string;
+    /**
+     * GitHub sender login.
+     */
+    sender?: string;
+    /**
+     * GitHub webhook event name, e.g. pull_request or check_suite.
+     */
+    source_event: string;
+};
+
+export type GitHubPrRef = {
+    ref?: string;
+    repo?: GitHubRefRepo;
+    sha?: string;
+};
+
+export type GitHubPullRequest = {
+    base?: GitHubPrRef;
+    draft?: boolean;
+    head?: GitHubPrRef;
+    html_url?: string;
+    mergeable?: boolean;
+    mergeable_state?: string;
+    number?: number;
+    state?: string;
+    title?: string;
+};
+
+export type GitHubRefRepo = {
+    full_name?: string;
+};
+
+export type GitHubRepository = {
+    full_name?: string;
+    name?: string;
+    owner?: GitHubRepositoryOwner;
+};
+
+export type GitHubRepositoryOwner = {
+    login?: string;
+    name?: string;
+};
+
+export type GitHubWebhookPayload = {
+    action?: string;
+    check_run?: GitHubCheckRun;
+    check_suite?: GitHubCheckSuite;
+    merge_group?: GitHubMergeGroup;
+    pull_request?: GitHubPullRequest;
+    repository: GitHubRepository;
+    sender?: GitHubWebhookSender;
+};
+
+export type GitHubWebhookResponse = {
+    /**
+     * Recorded Gas City event type.
+     */
+    event_type?: string;
+    /**
+     * Configured monitor that accepted the webhook.
+     */
+    monitor?: string;
+    /**
+     * Reason when the webhook was accepted but ignored.
+     */
+    reason?: string;
+    /**
+     * Whether the webhook produced a Gas City event.
+     */
+    recorded: boolean;
+    /**
+     * Ingestion status.
+     */
+    status: 'recorded' | 'ignored';
+};
+
+export type GitHubWebhookSender = {
+    login?: string;
 };
 
 export type GitStatus = {
@@ -3218,6 +3499,14 @@ export type TypedEventStreamEnvelope = ({
 } & TypedEventStreamEnvelopeGcStoreMaintenanceDone) | ({
     type: 'gc.store.maintenance.failed';
 } & TypedEventStreamEnvelopeGcStoreMaintenanceFailed) | ({
+    type: 'github.merge_group.failed';
+} & TypedEventStreamEnvelopeGithubMergeGroupFailed) | ({
+    type: 'github.pr.check_failed';
+} & TypedEventStreamEnvelopeGithubPrCheckFailed) | ({
+    type: 'github.pr.conflicted';
+} & TypedEventStreamEnvelopeGithubPrConflicted) | ({
+    type: 'github.pr.updated';
+} & TypedEventStreamEnvelopeGithubPrUpdated) | ({
     type: 'mail.archived';
 } & TypedEventStreamEnvelopeMailArchived) | ({
     type: 'mail.deleted';
@@ -3596,6 +3885,62 @@ export type TypedEventStreamEnvelopeGcStoreMaintenanceFailed = {
     subject?: string;
     ts: string;
     type: 'gc.store.maintenance.failed';
+    workflow?: WorkflowEventProjection;
+};
+
+/**
+ * TypedEventStreamEnvelope github.merge_group.failed
+ */
+export type TypedEventStreamEnvelopeGithubMergeGroupFailed = {
+    actor: string;
+    message?: string;
+    payload: GitHubMergeGroupEventPayload;
+    seq: number;
+    subject?: string;
+    ts: string;
+    type: 'github.merge_group.failed';
+    workflow?: WorkflowEventProjection;
+};
+
+/**
+ * TypedEventStreamEnvelope github.pr.check_failed
+ */
+export type TypedEventStreamEnvelopeGithubPrCheckFailed = {
+    actor: string;
+    message?: string;
+    payload: GitHubPrEventPayload;
+    seq: number;
+    subject?: string;
+    ts: string;
+    type: 'github.pr.check_failed';
+    workflow?: WorkflowEventProjection;
+};
+
+/**
+ * TypedEventStreamEnvelope github.pr.conflicted
+ */
+export type TypedEventStreamEnvelopeGithubPrConflicted = {
+    actor: string;
+    message?: string;
+    payload: GitHubPrEventPayload;
+    seq: number;
+    subject?: string;
+    ts: string;
+    type: 'github.pr.conflicted';
+    workflow?: WorkflowEventProjection;
+};
+
+/**
+ * TypedEventStreamEnvelope github.pr.updated
+ */
+export type TypedEventStreamEnvelopeGithubPrUpdated = {
+    actor: string;
+    message?: string;
+    payload: GitHubPrEventPayload;
+    seq: number;
+    subject?: string;
+    ts: string;
+    type: 'github.pr.updated';
     workflow?: WorkflowEventProjection;
 };
 
@@ -4137,6 +4482,14 @@ export type TypedTaggedEventStreamEnvelope = ({
 } & TypedTaggedEventStreamEnvelopeGcStoreMaintenanceDone) | ({
     type: 'gc.store.maintenance.failed';
 } & TypedTaggedEventStreamEnvelopeGcStoreMaintenanceFailed) | ({
+    type: 'github.merge_group.failed';
+} & TypedTaggedEventStreamEnvelopeGithubMergeGroupFailed) | ({
+    type: 'github.pr.check_failed';
+} & TypedTaggedEventStreamEnvelopeGithubPrCheckFailed) | ({
+    type: 'github.pr.conflicted';
+} & TypedTaggedEventStreamEnvelopeGithubPrConflicted) | ({
+    type: 'github.pr.updated';
+} & TypedTaggedEventStreamEnvelopeGithubPrUpdated) | ({
     type: 'mail.archived';
 } & TypedTaggedEventStreamEnvelopeMailArchived) | ({
     type: 'mail.deleted';
@@ -4537,6 +4890,66 @@ export type TypedTaggedEventStreamEnvelopeGcStoreMaintenanceFailed = {
     subject?: string;
     ts: string;
     type: 'gc.store.maintenance.failed';
+    workflow?: WorkflowEventProjection;
+};
+
+/**
+ * TypedTaggedEventStreamEnvelope github.merge_group.failed
+ */
+export type TypedTaggedEventStreamEnvelopeGithubMergeGroupFailed = {
+    actor: string;
+    city: string;
+    message?: string;
+    payload: GitHubMergeGroupEventPayload;
+    seq: number;
+    subject?: string;
+    ts: string;
+    type: 'github.merge_group.failed';
+    workflow?: WorkflowEventProjection;
+};
+
+/**
+ * TypedTaggedEventStreamEnvelope github.pr.check_failed
+ */
+export type TypedTaggedEventStreamEnvelopeGithubPrCheckFailed = {
+    actor: string;
+    city: string;
+    message?: string;
+    payload: GitHubPrEventPayload;
+    seq: number;
+    subject?: string;
+    ts: string;
+    type: 'github.pr.check_failed';
+    workflow?: WorkflowEventProjection;
+};
+
+/**
+ * TypedTaggedEventStreamEnvelope github.pr.conflicted
+ */
+export type TypedTaggedEventStreamEnvelopeGithubPrConflicted = {
+    actor: string;
+    city: string;
+    message?: string;
+    payload: GitHubPrEventPayload;
+    seq: number;
+    subject?: string;
+    ts: string;
+    type: 'github.pr.conflicted';
+    workflow?: WorkflowEventProjection;
+};
+
+/**
+ * TypedTaggedEventStreamEnvelope github.pr.updated
+ */
+export type TypedTaggedEventStreamEnvelopeGithubPrUpdated = {
+    actor: string;
+    city: string;
+    message?: string;
+    payload: GitHubPrEventPayload;
+    seq: number;
+    subject?: string;
+    ts: string;
+    type: 'github.pr.updated';
     workflow?: WorkflowEventProjection;
 };
 
@@ -7915,6 +8328,70 @@ export type GetV0CityByCityNameFormulasByNameRunsResponses = {
 };
 
 export type GetV0CityByCityNameFormulasByNameRunsResponse = GetV0CityByCityNameFormulasByNameRunsResponses[keyof GetV0CityByCityNameFormulasByNameRunsResponses];
+
+export type GithubWebhookData = {
+    body: GitHubWebhookPayload;
+    headers: {
+        /**
+         * GitHub webhook event name.
+         */
+        'X-GitHub-Event': string;
+        /**
+         * GitHub delivery identifier.
+         */
+        'X-GitHub-Delivery': string;
+        /**
+         * GitHub SHA-256 HMAC signature in sha256=<hex> form.
+         */
+        'X-Hub-Signature-256': string;
+    };
+    path: {
+        /**
+         * City name.
+         */
+        cityName: string;
+    };
+    query?: never;
+    url: '/v0/city/{cityName}/github/webhook';
+};
+
+export type GithubWebhookErrors = {
+    /**
+     * Bad Request
+     */
+    400: ErrorModel;
+    /**
+     * Unauthorized
+     */
+    401: ErrorModel;
+    /**
+     * Not Found
+     */
+    404: ErrorModel;
+    /**
+     * Unprocessable Entity
+     */
+    422: ErrorModel;
+    /**
+     * Internal Server Error
+     */
+    500: ErrorModel;
+    /**
+     * Service Unavailable
+     */
+    503: ErrorModel;
+};
+
+export type GithubWebhookError = GithubWebhookErrors[keyof GithubWebhookErrors];
+
+export type GithubWebhookResponses = {
+    /**
+     * Accepted
+     */
+    202: GitHubWebhookResponse;
+};
+
+export type GithubWebhookResponse = GithubWebhookResponses[keyof GithubWebhookResponses];
 
 export type GetV0CityByCityNameHealthData = {
     body?: never;

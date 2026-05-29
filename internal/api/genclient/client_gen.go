@@ -99,6 +99,24 @@ func (e EventRotateArchiveCompressionStatus) Valid() bool {
 	}
 }
 
+// Defines values for GitHubWebhookResponseStatus.
+const (
+	Ignored  GitHubWebhookResponseStatus = "ignored"
+	Recorded GitHubWebhookResponseStatus = "recorded"
+)
+
+// Valid indicates whether the value is a known member of the GitHubWebhookResponseStatus enum.
+func (e GitHubWebhookResponseStatus) Valid() bool {
+	switch e {
+	case Ignored:
+		return true
+	case Recorded:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for RequestFailedPayloadOperation.
 const (
 	CityCreate     RequestFailedPayloadOperation = "city.create"
@@ -1308,6 +1326,254 @@ type FormulaVarDefResponse struct {
 	Pattern     *string     `json:"pattern,omitempty"`
 	Required    *bool       `json:"required,omitempty"`
 	Type        string      `json:"type"`
+}
+
+// GitHubCheckPullRequest defines model for GitHubCheckPullRequest.
+type GitHubCheckPullRequest struct {
+	Base    *GitHubPRRef `json:"base,omitempty"`
+	Head    *GitHubPRRef `json:"head,omitempty"`
+	HtmlUrl *string      `json:"html_url,omitempty"`
+	Number  *int64       `json:"number,omitempty"`
+	Url     *string      `json:"url,omitempty"`
+}
+
+// GitHubCheckRun defines model for GitHubCheckRun.
+type GitHubCheckRun struct {
+	Conclusion   *string                   `json:"conclusion,omitempty"`
+	HeadBranch   *string                   `json:"head_branch,omitempty"`
+	HeadSha      *string                   `json:"head_sha,omitempty"`
+	HtmlUrl      *string                   `json:"html_url,omitempty"`
+	Id           *int64                    `json:"id,omitempty"`
+	Name         *string                   `json:"name,omitempty"`
+	PullRequests *[]GitHubCheckPullRequest `json:"pull_requests,omitempty"`
+	Status       *string                   `json:"status,omitempty"`
+}
+
+// GitHubCheckSuite defines model for GitHubCheckSuite.
+type GitHubCheckSuite struct {
+	Conclusion   *string                   `json:"conclusion,omitempty"`
+	HeadBranch   *string                   `json:"head_branch,omitempty"`
+	HeadSha      *string                   `json:"head_sha,omitempty"`
+	HtmlUrl      *string                   `json:"html_url,omitempty"`
+	Id           *int64                    `json:"id,omitempty"`
+	PullRequests *[]GitHubCheckPullRequest `json:"pull_requests,omitempty"`
+	Status       *string                   `json:"status,omitempty"`
+}
+
+// GitHubMergeGroup defines model for GitHubMergeGroup.
+type GitHubMergeGroup struct {
+	BaseRef *string `json:"base_ref,omitempty"`
+	HeadRef *string `json:"head_ref,omitempty"`
+	HeadSha *string `json:"head_sha,omitempty"`
+	HtmlUrl *string `json:"html_url,omitempty"`
+	WebUrl  *string `json:"web_url,omitempty"`
+}
+
+// GitHubMergeGroupEventPayload defines model for GitHubMergeGroupEventPayload.
+type GitHubMergeGroupEventPayload struct {
+	// Action GitHub webhook action.
+	Action *string `json:"action,omitempty"`
+
+	// BaseBranch Merge group base branch.
+	BaseBranch string `json:"base_branch"`
+
+	// DeliveryId GitHub X-GitHub-Delivery identifier.
+	DeliveryId string `json:"delivery_id"`
+
+	// FailureKind Normalized failure kind.
+	FailureKind string `json:"failure_kind"`
+
+	// FullName Repository full name in owner/repo form.
+	FullName string `json:"full_name"`
+
+	// HeadRef Merge group head ref.
+	HeadRef *string `json:"head_ref,omitempty"`
+
+	// HeadSha Merge group head SHA.
+	HeadSha *string `json:"head_sha,omitempty"`
+
+	// Monitor Configured GitHub PR monitor name.
+	Monitor string `json:"monitor"`
+
+	// Owner Repository owner or organization.
+	Owner string `json:"owner"`
+
+	// RepairRoute Configured repair route target.
+	RepairRoute string `json:"repair_route"`
+
+	// Repo Repository name.
+	Repo string `json:"repo"`
+
+	// Rig Configured owning rig for repair work.
+	Rig string `json:"rig"`
+
+	// Sender GitHub sender login.
+	Sender *string `json:"sender,omitempty"`
+
+	// SourceEvent GitHub webhook event name.
+	SourceEvent string `json:"source_event"`
+
+	// Url Browser URL for the merge group or related PR when present.
+	Url *string `json:"url,omitempty"`
+}
+
+// GitHubPREventPayload defines model for GitHubPREventPayload.
+type GitHubPREventPayload struct {
+	// Action GitHub webhook action.
+	Action *string `json:"action,omitempty"`
+
+	// BaseBranch Pull request base branch.
+	BaseBranch string `json:"base_branch"`
+
+	// BaseSha Base branch SHA from the webhook payload.
+	BaseSha *string `json:"base_sha,omitempty"`
+
+	// CheckConclusion GitHub check conclusion.
+	CheckConclusion *string `json:"check_conclusion,omitempty"`
+
+	// CheckName Failed check name or check kind.
+	CheckName *string `json:"check_name,omitempty"`
+
+	// CheckStatus GitHub check status.
+	CheckStatus *string `json:"check_status,omitempty"`
+
+	// CheckUrl GitHub check browser URL.
+	CheckUrl *string `json:"check_url,omitempty"`
+
+	// DeliveryId GitHub X-GitHub-Delivery identifier.
+	DeliveryId string `json:"delivery_id"`
+
+	// Draft Whether the pull request is a draft.
+	Draft *bool `json:"draft,omitempty"`
+
+	// FailureKind Normalized failure kind, e.g. check_failed or merge_conflict.
+	FailureKind *string `json:"failure_kind,omitempty"`
+
+	// FullName Repository full name in owner/repo form.
+	FullName string `json:"full_name"`
+
+	// HeadRef Pull request head branch.
+	HeadRef *string `json:"head_ref,omitempty"`
+
+	// HeadRepo Pull request head repository full name.
+	HeadRepo *string `json:"head_repo,omitempty"`
+
+	// HeadSha Pull request or check head SHA.
+	HeadSha *string `json:"head_sha,omitempty"`
+
+	// Mergeable GitHub mergeable flag when present.
+	Mergeable *bool `json:"mergeable,omitempty"`
+
+	// MergeableState GitHub mergeable_state value when present.
+	MergeableState *string `json:"mergeable_state,omitempty"`
+
+	// Monitor Configured GitHub PR monitor name.
+	Monitor string `json:"monitor"`
+
+	// Owner Repository owner or organization.
+	Owner string `json:"owner"`
+
+	// PrNumber Pull request number.
+	PrNumber int64 `json:"pr_number"`
+
+	// PrState Pull request state.
+	PrState *string `json:"pr_state,omitempty"`
+
+	// PrTitle Pull request title.
+	PrTitle *string `json:"pr_title,omitempty"`
+
+	// PrUrl Pull request browser URL.
+	PrUrl *string `json:"pr_url,omitempty"`
+
+	// RepairRoute Configured repair route target.
+	RepairRoute string `json:"repair_route"`
+
+	// Repo Repository name.
+	Repo string `json:"repo"`
+
+	// Rig Configured owning rig for repair work.
+	Rig string `json:"rig"`
+
+	// Sender GitHub sender login.
+	Sender *string `json:"sender,omitempty"`
+
+	// SourceEvent GitHub webhook event name, e.g. pull_request or check_suite.
+	SourceEvent string `json:"source_event"`
+}
+
+// GitHubPRRef defines model for GitHubPRRef.
+type GitHubPRRef struct {
+	Ref  *string        `json:"ref,omitempty"`
+	Repo *GitHubRefRepo `json:"repo,omitempty"`
+	Sha  *string        `json:"sha,omitempty"`
+}
+
+// GitHubPullRequest defines model for GitHubPullRequest.
+type GitHubPullRequest struct {
+	Base           *GitHubPRRef `json:"base,omitempty"`
+	Draft          *bool        `json:"draft,omitempty"`
+	Head           *GitHubPRRef `json:"head,omitempty"`
+	HtmlUrl        *string      `json:"html_url,omitempty"`
+	Mergeable      *bool        `json:"mergeable,omitempty"`
+	MergeableState *string      `json:"mergeable_state,omitempty"`
+	Number         *int64       `json:"number,omitempty"`
+	State          *string      `json:"state,omitempty"`
+	Title          *string      `json:"title,omitempty"`
+}
+
+// GitHubRefRepo defines model for GitHubRefRepo.
+type GitHubRefRepo struct {
+	FullName *string `json:"full_name,omitempty"`
+}
+
+// GitHubRepository defines model for GitHubRepository.
+type GitHubRepository struct {
+	FullName *string                `json:"full_name,omitempty"`
+	Name     *string                `json:"name,omitempty"`
+	Owner    *GitHubRepositoryOwner `json:"owner,omitempty"`
+}
+
+// GitHubRepositoryOwner defines model for GitHubRepositoryOwner.
+type GitHubRepositoryOwner struct {
+	Login *string `json:"login,omitempty"`
+	Name  *string `json:"name,omitempty"`
+}
+
+// GitHubWebhookPayload defines model for GitHubWebhookPayload.
+type GitHubWebhookPayload struct {
+	Action      *string              `json:"action,omitempty"`
+	CheckRun    *GitHubCheckRun      `json:"check_run,omitempty"`
+	CheckSuite  *GitHubCheckSuite    `json:"check_suite,omitempty"`
+	MergeGroup  *GitHubMergeGroup    `json:"merge_group,omitempty"`
+	PullRequest *GitHubPullRequest   `json:"pull_request,omitempty"`
+	Repository  GitHubRepository     `json:"repository"`
+	Sender      *GitHubWebhookSender `json:"sender,omitempty"`
+}
+
+// GitHubWebhookResponse defines model for GitHubWebhookResponse.
+type GitHubWebhookResponse struct {
+	// EventType Recorded Gas City event type.
+	EventType *string `json:"event_type,omitempty"`
+
+	// Monitor Configured monitor that accepted the webhook.
+	Monitor *string `json:"monitor,omitempty"`
+
+	// Reason Reason when the webhook was accepted but ignored.
+	Reason *string `json:"reason,omitempty"`
+
+	// Recorded Whether the webhook produced a Gas City event.
+	Recorded bool `json:"recorded"`
+
+	// Status Ingestion status.
+	Status GitHubWebhookResponseStatus `json:"status"`
+}
+
+// GitHubWebhookResponseStatus Ingestion status.
+type GitHubWebhookResponseStatus string
+
+// GitHubWebhookSender defines model for GitHubWebhookSender.
+type GitHubWebhookSender struct {
+	Login *string `json:"login,omitempty"`
 }
 
 // GitStatus defines model for GitStatus.
@@ -3251,6 +3517,54 @@ type TypedEventStreamEnvelopeGcStoreMaintenanceFailed struct {
 	Workflow *WorkflowEventProjection      `json:"workflow,omitempty"`
 }
 
+// TypedEventStreamEnvelopeGithubMergeGroupFailed defines model for TypedEventStreamEnvelopeGithubMergeGroupFailed.
+type TypedEventStreamEnvelopeGithubMergeGroupFailed struct {
+	Actor    string                       `json:"actor"`
+	Message  *string                      `json:"message,omitempty"`
+	Payload  GitHubMergeGroupEventPayload `json:"payload"`
+	Seq      int64                        `json:"seq"`
+	Subject  *string                      `json:"subject,omitempty"`
+	Ts       time.Time                    `json:"ts"`
+	Type     string                       `json:"type"`
+	Workflow *WorkflowEventProjection     `json:"workflow,omitempty"`
+}
+
+// TypedEventStreamEnvelopeGithubPrCheckFailed defines model for TypedEventStreamEnvelopeGithubPrCheckFailed.
+type TypedEventStreamEnvelopeGithubPrCheckFailed struct {
+	Actor    string                   `json:"actor"`
+	Message  *string                  `json:"message,omitempty"`
+	Payload  GitHubPREventPayload     `json:"payload"`
+	Seq      int64                    `json:"seq"`
+	Subject  *string                  `json:"subject,omitempty"`
+	Ts       time.Time                `json:"ts"`
+	Type     string                   `json:"type"`
+	Workflow *WorkflowEventProjection `json:"workflow,omitempty"`
+}
+
+// TypedEventStreamEnvelopeGithubPrConflicted defines model for TypedEventStreamEnvelopeGithubPrConflicted.
+type TypedEventStreamEnvelopeGithubPrConflicted struct {
+	Actor    string                   `json:"actor"`
+	Message  *string                  `json:"message,omitempty"`
+	Payload  GitHubPREventPayload     `json:"payload"`
+	Seq      int64                    `json:"seq"`
+	Subject  *string                  `json:"subject,omitempty"`
+	Ts       time.Time                `json:"ts"`
+	Type     string                   `json:"type"`
+	Workflow *WorkflowEventProjection `json:"workflow,omitempty"`
+}
+
+// TypedEventStreamEnvelopeGithubPrUpdated defines model for TypedEventStreamEnvelopeGithubPrUpdated.
+type TypedEventStreamEnvelopeGithubPrUpdated struct {
+	Actor    string                   `json:"actor"`
+	Message  *string                  `json:"message,omitempty"`
+	Payload  GitHubPREventPayload     `json:"payload"`
+	Seq      int64                    `json:"seq"`
+	Subject  *string                  `json:"subject,omitempty"`
+	Ts       time.Time                `json:"ts"`
+	Type     string                   `json:"type"`
+	Workflow *WorkflowEventProjection `json:"workflow,omitempty"`
+}
+
 // TypedEventStreamEnvelopeMailArchived defines model for TypedEventStreamEnvelopeMailArchived.
 type TypedEventStreamEnvelopeMailArchived struct {
 	Actor    string                   `json:"actor"`
@@ -3960,6 +4274,58 @@ type TypedTaggedEventStreamEnvelopeGcStoreMaintenanceFailed struct {
 	Ts       time.Time                     `json:"ts"`
 	Type     string                        `json:"type"`
 	Workflow *WorkflowEventProjection      `json:"workflow,omitempty"`
+}
+
+// TypedTaggedEventStreamEnvelopeGithubMergeGroupFailed defines model for TypedTaggedEventStreamEnvelopeGithubMergeGroupFailed.
+type TypedTaggedEventStreamEnvelopeGithubMergeGroupFailed struct {
+	Actor    string                       `json:"actor"`
+	City     string                       `json:"city"`
+	Message  *string                      `json:"message,omitempty"`
+	Payload  GitHubMergeGroupEventPayload `json:"payload"`
+	Seq      int64                        `json:"seq"`
+	Subject  *string                      `json:"subject,omitempty"`
+	Ts       time.Time                    `json:"ts"`
+	Type     string                       `json:"type"`
+	Workflow *WorkflowEventProjection     `json:"workflow,omitempty"`
+}
+
+// TypedTaggedEventStreamEnvelopeGithubPrCheckFailed defines model for TypedTaggedEventStreamEnvelopeGithubPrCheckFailed.
+type TypedTaggedEventStreamEnvelopeGithubPrCheckFailed struct {
+	Actor    string                   `json:"actor"`
+	City     string                   `json:"city"`
+	Message  *string                  `json:"message,omitempty"`
+	Payload  GitHubPREventPayload     `json:"payload"`
+	Seq      int64                    `json:"seq"`
+	Subject  *string                  `json:"subject,omitempty"`
+	Ts       time.Time                `json:"ts"`
+	Type     string                   `json:"type"`
+	Workflow *WorkflowEventProjection `json:"workflow,omitempty"`
+}
+
+// TypedTaggedEventStreamEnvelopeGithubPrConflicted defines model for TypedTaggedEventStreamEnvelopeGithubPrConflicted.
+type TypedTaggedEventStreamEnvelopeGithubPrConflicted struct {
+	Actor    string                   `json:"actor"`
+	City     string                   `json:"city"`
+	Message  *string                  `json:"message,omitempty"`
+	Payload  GitHubPREventPayload     `json:"payload"`
+	Seq      int64                    `json:"seq"`
+	Subject  *string                  `json:"subject,omitempty"`
+	Ts       time.Time                `json:"ts"`
+	Type     string                   `json:"type"`
+	Workflow *WorkflowEventProjection `json:"workflow,omitempty"`
+}
+
+// TypedTaggedEventStreamEnvelopeGithubPrUpdated defines model for TypedTaggedEventStreamEnvelopeGithubPrUpdated.
+type TypedTaggedEventStreamEnvelopeGithubPrUpdated struct {
+	Actor    string                   `json:"actor"`
+	City     string                   `json:"city"`
+	Message  *string                  `json:"message,omitempty"`
+	Payload  GitHubPREventPayload     `json:"payload"`
+	Seq      int64                    `json:"seq"`
+	Subject  *string                  `json:"subject,omitempty"`
+	Ts       time.Time                `json:"ts"`
+	Type     string                   `json:"type"`
+	Workflow *WorkflowEventProjection `json:"workflow,omitempty"`
 }
 
 // TypedTaggedEventStreamEnvelopeMailArchived defines model for TypedTaggedEventStreamEnvelopeMailArchived.
@@ -5019,6 +5385,18 @@ type GetV0CityByCityNameFormulasByNameRunsParams struct {
 	Limit *int64 `form:"limit,omitempty" json:"limit,omitempty"`
 }
 
+// GithubWebhookParams defines parameters for GithubWebhook.
+type GithubWebhookParams struct {
+	// XGitHubEvent GitHub webhook event name.
+	XGitHubEvent string `json:"X-GitHub-Event"`
+
+	// XGitHubDelivery GitHub delivery identifier.
+	XGitHubDelivery string `json:"X-GitHub-Delivery"`
+
+	// XHubSignature256 GitHub SHA-256 HMAC signature in sha256=<hex> form.
+	XHubSignature256 string `json:"X-Hub-Signature-256"`
+}
+
 // GetV0CityByCityNameMailParams defines parameters for GetV0CityByCityNameMail.
 type GetV0CityByCityNameMailParams struct {
 	// Index Event sequence number; when provided, blocks until a newer event arrives.
@@ -5574,6 +5952,9 @@ type PostV0CityByCityNameExtmsgUnbindJSONRequestBody = ExtMsgUnbindInputBody
 // PostV0CityByCityNameFormulasByNamePreviewJSONRequestBody defines body for PostV0CityByCityNameFormulasByNamePreview for application/json ContentType.
 type PostV0CityByCityNameFormulasByNamePreviewJSONRequestBody = FormulaPreviewBody
 
+// GithubWebhookJSONRequestBody defines body for GithubWebhook for application/json ContentType.
+type GithubWebhookJSONRequestBody = GitHubWebhookPayload
+
 // SendMailJSONRequestBody defines body for SendMail for application/json ContentType.
 type SendMailJSONRequestBody = MailSendInputBody
 
@@ -5771,6 +6152,58 @@ func (t *EventPayload) FromCityUnregisterSucceededPayload(v CityUnregisterSuccee
 
 // MergeCityUnregisterSucceededPayload performs a merge with any union data inside the EventPayload, using the provided CityUnregisterSucceededPayload
 func (t *EventPayload) MergeCityUnregisterSucceededPayload(v CityUnregisterSucceededPayload) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsGitHubMergeGroupEventPayload returns the union data inside the EventPayload as a GitHubMergeGroupEventPayload
+func (t EventPayload) AsGitHubMergeGroupEventPayload() (GitHubMergeGroupEventPayload, error) {
+	var body GitHubMergeGroupEventPayload
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromGitHubMergeGroupEventPayload overwrites any union data inside the EventPayload as the provided GitHubMergeGroupEventPayload
+func (t *EventPayload) FromGitHubMergeGroupEventPayload(v GitHubMergeGroupEventPayload) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeGitHubMergeGroupEventPayload performs a merge with any union data inside the EventPayload, using the provided GitHubMergeGroupEventPayload
+func (t *EventPayload) MergeGitHubMergeGroupEventPayload(v GitHubMergeGroupEventPayload) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsGitHubPREventPayload returns the union data inside the EventPayload as a GitHubPREventPayload
+func (t EventPayload) AsGitHubPREventPayload() (GitHubPREventPayload, error) {
+	var body GitHubPREventPayload
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromGitHubPREventPayload overwrites any union data inside the EventPayload as the provided GitHubPREventPayload
+func (t *EventPayload) FromGitHubPREventPayload(v GitHubPREventPayload) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeGitHubPREventPayload performs a merge with any union data inside the EventPayload, using the provided GitHubPREventPayload
+func (t *EventPayload) MergeGitHubPREventPayload(v GitHubPREventPayload) error {
 	b, err := json.Marshal(v)
 	if err != nil {
 		return err
@@ -6987,6 +7420,118 @@ func (t *TypedEventStreamEnvelope) MergeTypedEventStreamEnvelopeGcStoreMaintenan
 	return err
 }
 
+// AsTypedEventStreamEnvelopeGithubMergeGroupFailed returns the union data inside the TypedEventStreamEnvelope as a TypedEventStreamEnvelopeGithubMergeGroupFailed
+func (t TypedEventStreamEnvelope) AsTypedEventStreamEnvelopeGithubMergeGroupFailed() (TypedEventStreamEnvelopeGithubMergeGroupFailed, error) {
+	var body TypedEventStreamEnvelopeGithubMergeGroupFailed
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromTypedEventStreamEnvelopeGithubMergeGroupFailed overwrites any union data inside the TypedEventStreamEnvelope as the provided TypedEventStreamEnvelopeGithubMergeGroupFailed
+func (t *TypedEventStreamEnvelope) FromTypedEventStreamEnvelopeGithubMergeGroupFailed(v TypedEventStreamEnvelopeGithubMergeGroupFailed) error {
+	v.Type = "github.merge_group.failed"
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeTypedEventStreamEnvelopeGithubMergeGroupFailed performs a merge with any union data inside the TypedEventStreamEnvelope, using the provided TypedEventStreamEnvelopeGithubMergeGroupFailed
+func (t *TypedEventStreamEnvelope) MergeTypedEventStreamEnvelopeGithubMergeGroupFailed(v TypedEventStreamEnvelopeGithubMergeGroupFailed) error {
+	v.Type = "github.merge_group.failed"
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsTypedEventStreamEnvelopeGithubPrCheckFailed returns the union data inside the TypedEventStreamEnvelope as a TypedEventStreamEnvelopeGithubPrCheckFailed
+func (t TypedEventStreamEnvelope) AsTypedEventStreamEnvelopeGithubPrCheckFailed() (TypedEventStreamEnvelopeGithubPrCheckFailed, error) {
+	var body TypedEventStreamEnvelopeGithubPrCheckFailed
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromTypedEventStreamEnvelopeGithubPrCheckFailed overwrites any union data inside the TypedEventStreamEnvelope as the provided TypedEventStreamEnvelopeGithubPrCheckFailed
+func (t *TypedEventStreamEnvelope) FromTypedEventStreamEnvelopeGithubPrCheckFailed(v TypedEventStreamEnvelopeGithubPrCheckFailed) error {
+	v.Type = "github.pr.check_failed"
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeTypedEventStreamEnvelopeGithubPrCheckFailed performs a merge with any union data inside the TypedEventStreamEnvelope, using the provided TypedEventStreamEnvelopeGithubPrCheckFailed
+func (t *TypedEventStreamEnvelope) MergeTypedEventStreamEnvelopeGithubPrCheckFailed(v TypedEventStreamEnvelopeGithubPrCheckFailed) error {
+	v.Type = "github.pr.check_failed"
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsTypedEventStreamEnvelopeGithubPrConflicted returns the union data inside the TypedEventStreamEnvelope as a TypedEventStreamEnvelopeGithubPrConflicted
+func (t TypedEventStreamEnvelope) AsTypedEventStreamEnvelopeGithubPrConflicted() (TypedEventStreamEnvelopeGithubPrConflicted, error) {
+	var body TypedEventStreamEnvelopeGithubPrConflicted
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromTypedEventStreamEnvelopeGithubPrConflicted overwrites any union data inside the TypedEventStreamEnvelope as the provided TypedEventStreamEnvelopeGithubPrConflicted
+func (t *TypedEventStreamEnvelope) FromTypedEventStreamEnvelopeGithubPrConflicted(v TypedEventStreamEnvelopeGithubPrConflicted) error {
+	v.Type = "github.pr.conflicted"
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeTypedEventStreamEnvelopeGithubPrConflicted performs a merge with any union data inside the TypedEventStreamEnvelope, using the provided TypedEventStreamEnvelopeGithubPrConflicted
+func (t *TypedEventStreamEnvelope) MergeTypedEventStreamEnvelopeGithubPrConflicted(v TypedEventStreamEnvelopeGithubPrConflicted) error {
+	v.Type = "github.pr.conflicted"
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsTypedEventStreamEnvelopeGithubPrUpdated returns the union data inside the TypedEventStreamEnvelope as a TypedEventStreamEnvelopeGithubPrUpdated
+func (t TypedEventStreamEnvelope) AsTypedEventStreamEnvelopeGithubPrUpdated() (TypedEventStreamEnvelopeGithubPrUpdated, error) {
+	var body TypedEventStreamEnvelopeGithubPrUpdated
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromTypedEventStreamEnvelopeGithubPrUpdated overwrites any union data inside the TypedEventStreamEnvelope as the provided TypedEventStreamEnvelopeGithubPrUpdated
+func (t *TypedEventStreamEnvelope) FromTypedEventStreamEnvelopeGithubPrUpdated(v TypedEventStreamEnvelopeGithubPrUpdated) error {
+	v.Type = "github.pr.updated"
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeTypedEventStreamEnvelopeGithubPrUpdated performs a merge with any union data inside the TypedEventStreamEnvelope, using the provided TypedEventStreamEnvelopeGithubPrUpdated
+func (t *TypedEventStreamEnvelope) MergeTypedEventStreamEnvelopeGithubPrUpdated(v TypedEventStreamEnvelopeGithubPrUpdated) error {
+	v.Type = "github.pr.updated"
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
 // AsTypedEventStreamEnvelopeMailArchived returns the union data inside the TypedEventStreamEnvelope as a TypedEventStreamEnvelopeMailArchived
 func (t TypedEventStreamEnvelope) AsTypedEventStreamEnvelopeMailArchived() (TypedEventStreamEnvelopeMailArchived, error) {
 	var body TypedEventStreamEnvelopeMailArchived
@@ -8053,6 +8598,14 @@ func (t TypedEventStreamEnvelope) ValueByDiscriminator() (interface{}, error) {
 		return t.AsTypedEventStreamEnvelopeGcStoreMaintenanceDone()
 	case "gc.store.maintenance.failed":
 		return t.AsTypedEventStreamEnvelopeGcStoreMaintenanceFailed()
+	case "github.merge_group.failed":
+		return t.AsTypedEventStreamEnvelopeGithubMergeGroupFailed()
+	case "github.pr.check_failed":
+		return t.AsTypedEventStreamEnvelopeGithubPrCheckFailed()
+	case "github.pr.conflicted":
+		return t.AsTypedEventStreamEnvelopeGithubPrConflicted()
+	case "github.pr.updated":
+		return t.AsTypedEventStreamEnvelopeGithubPrUpdated()
 	case "mail.archived":
 		return t.AsTypedEventStreamEnvelopeMailArchived()
 	case "mail.deleted":
@@ -8716,6 +9269,118 @@ func (t *TypedTaggedEventStreamEnvelope) FromTypedTaggedEventStreamEnvelopeGcSto
 // MergeTypedTaggedEventStreamEnvelopeGcStoreMaintenanceFailed performs a merge with any union data inside the TypedTaggedEventStreamEnvelope, using the provided TypedTaggedEventStreamEnvelopeGcStoreMaintenanceFailed
 func (t *TypedTaggedEventStreamEnvelope) MergeTypedTaggedEventStreamEnvelopeGcStoreMaintenanceFailed(v TypedTaggedEventStreamEnvelopeGcStoreMaintenanceFailed) error {
 	v.Type = "gc.store.maintenance.failed"
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsTypedTaggedEventStreamEnvelopeGithubMergeGroupFailed returns the union data inside the TypedTaggedEventStreamEnvelope as a TypedTaggedEventStreamEnvelopeGithubMergeGroupFailed
+func (t TypedTaggedEventStreamEnvelope) AsTypedTaggedEventStreamEnvelopeGithubMergeGroupFailed() (TypedTaggedEventStreamEnvelopeGithubMergeGroupFailed, error) {
+	var body TypedTaggedEventStreamEnvelopeGithubMergeGroupFailed
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromTypedTaggedEventStreamEnvelopeGithubMergeGroupFailed overwrites any union data inside the TypedTaggedEventStreamEnvelope as the provided TypedTaggedEventStreamEnvelopeGithubMergeGroupFailed
+func (t *TypedTaggedEventStreamEnvelope) FromTypedTaggedEventStreamEnvelopeGithubMergeGroupFailed(v TypedTaggedEventStreamEnvelopeGithubMergeGroupFailed) error {
+	v.Type = "github.merge_group.failed"
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeTypedTaggedEventStreamEnvelopeGithubMergeGroupFailed performs a merge with any union data inside the TypedTaggedEventStreamEnvelope, using the provided TypedTaggedEventStreamEnvelopeGithubMergeGroupFailed
+func (t *TypedTaggedEventStreamEnvelope) MergeTypedTaggedEventStreamEnvelopeGithubMergeGroupFailed(v TypedTaggedEventStreamEnvelopeGithubMergeGroupFailed) error {
+	v.Type = "github.merge_group.failed"
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsTypedTaggedEventStreamEnvelopeGithubPrCheckFailed returns the union data inside the TypedTaggedEventStreamEnvelope as a TypedTaggedEventStreamEnvelopeGithubPrCheckFailed
+func (t TypedTaggedEventStreamEnvelope) AsTypedTaggedEventStreamEnvelopeGithubPrCheckFailed() (TypedTaggedEventStreamEnvelopeGithubPrCheckFailed, error) {
+	var body TypedTaggedEventStreamEnvelopeGithubPrCheckFailed
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromTypedTaggedEventStreamEnvelopeGithubPrCheckFailed overwrites any union data inside the TypedTaggedEventStreamEnvelope as the provided TypedTaggedEventStreamEnvelopeGithubPrCheckFailed
+func (t *TypedTaggedEventStreamEnvelope) FromTypedTaggedEventStreamEnvelopeGithubPrCheckFailed(v TypedTaggedEventStreamEnvelopeGithubPrCheckFailed) error {
+	v.Type = "github.pr.check_failed"
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeTypedTaggedEventStreamEnvelopeGithubPrCheckFailed performs a merge with any union data inside the TypedTaggedEventStreamEnvelope, using the provided TypedTaggedEventStreamEnvelopeGithubPrCheckFailed
+func (t *TypedTaggedEventStreamEnvelope) MergeTypedTaggedEventStreamEnvelopeGithubPrCheckFailed(v TypedTaggedEventStreamEnvelopeGithubPrCheckFailed) error {
+	v.Type = "github.pr.check_failed"
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsTypedTaggedEventStreamEnvelopeGithubPrConflicted returns the union data inside the TypedTaggedEventStreamEnvelope as a TypedTaggedEventStreamEnvelopeGithubPrConflicted
+func (t TypedTaggedEventStreamEnvelope) AsTypedTaggedEventStreamEnvelopeGithubPrConflicted() (TypedTaggedEventStreamEnvelopeGithubPrConflicted, error) {
+	var body TypedTaggedEventStreamEnvelopeGithubPrConflicted
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromTypedTaggedEventStreamEnvelopeGithubPrConflicted overwrites any union data inside the TypedTaggedEventStreamEnvelope as the provided TypedTaggedEventStreamEnvelopeGithubPrConflicted
+func (t *TypedTaggedEventStreamEnvelope) FromTypedTaggedEventStreamEnvelopeGithubPrConflicted(v TypedTaggedEventStreamEnvelopeGithubPrConflicted) error {
+	v.Type = "github.pr.conflicted"
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeTypedTaggedEventStreamEnvelopeGithubPrConflicted performs a merge with any union data inside the TypedTaggedEventStreamEnvelope, using the provided TypedTaggedEventStreamEnvelopeGithubPrConflicted
+func (t *TypedTaggedEventStreamEnvelope) MergeTypedTaggedEventStreamEnvelopeGithubPrConflicted(v TypedTaggedEventStreamEnvelopeGithubPrConflicted) error {
+	v.Type = "github.pr.conflicted"
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsTypedTaggedEventStreamEnvelopeGithubPrUpdated returns the union data inside the TypedTaggedEventStreamEnvelope as a TypedTaggedEventStreamEnvelopeGithubPrUpdated
+func (t TypedTaggedEventStreamEnvelope) AsTypedTaggedEventStreamEnvelopeGithubPrUpdated() (TypedTaggedEventStreamEnvelopeGithubPrUpdated, error) {
+	var body TypedTaggedEventStreamEnvelopeGithubPrUpdated
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromTypedTaggedEventStreamEnvelopeGithubPrUpdated overwrites any union data inside the TypedTaggedEventStreamEnvelope as the provided TypedTaggedEventStreamEnvelopeGithubPrUpdated
+func (t *TypedTaggedEventStreamEnvelope) FromTypedTaggedEventStreamEnvelopeGithubPrUpdated(v TypedTaggedEventStreamEnvelopeGithubPrUpdated) error {
+	v.Type = "github.pr.updated"
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeTypedTaggedEventStreamEnvelopeGithubPrUpdated performs a merge with any union data inside the TypedTaggedEventStreamEnvelope, using the provided TypedTaggedEventStreamEnvelopeGithubPrUpdated
+func (t *TypedTaggedEventStreamEnvelope) MergeTypedTaggedEventStreamEnvelopeGithubPrUpdated(v TypedTaggedEventStreamEnvelopeGithubPrUpdated) error {
+	v.Type = "github.pr.updated"
 	b, err := json.Marshal(v)
 	if err != nil {
 		return err
@@ -9792,6 +10457,14 @@ func (t TypedTaggedEventStreamEnvelope) ValueByDiscriminator() (interface{}, err
 		return t.AsTypedTaggedEventStreamEnvelopeGcStoreMaintenanceDone()
 	case "gc.store.maintenance.failed":
 		return t.AsTypedTaggedEventStreamEnvelopeGcStoreMaintenanceFailed()
+	case "github.merge_group.failed":
+		return t.AsTypedTaggedEventStreamEnvelopeGithubMergeGroupFailed()
+	case "github.pr.check_failed":
+		return t.AsTypedTaggedEventStreamEnvelopeGithubPrCheckFailed()
+	case "github.pr.conflicted":
+		return t.AsTypedTaggedEventStreamEnvelopeGithubPrConflicted()
+	case "github.pr.updated":
+		return t.AsTypedTaggedEventStreamEnvelopeGithubPrUpdated()
 	case "mail.archived":
 		return t.AsTypedTaggedEventStreamEnvelopeMailArchived()
 	case "mail.deleted":
@@ -10195,6 +10868,11 @@ type ClientInterface interface {
 
 	// GetV0CityByCityNameFormulasByNameRuns request
 	GetV0CityByCityNameFormulasByNameRuns(ctx context.Context, cityName string, name string, params *GetV0CityByCityNameFormulasByNameRunsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GithubWebhookWithBody request with any body
+	GithubWebhookWithBody(ctx context.Context, cityName string, params *GithubWebhookParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	GithubWebhook(ctx context.Context, cityName string, params *GithubWebhookParams, body GithubWebhookJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// GetV0CityByCityNameHealth request
 	GetV0CityByCityNameHealth(ctx context.Context, cityName string, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -11538,6 +12216,30 @@ func (c *Client) PostV0CityByCityNameFormulasByNamePreview(ctx context.Context, 
 
 func (c *Client) GetV0CityByCityNameFormulasByNameRuns(ctx context.Context, cityName string, name string, params *GetV0CityByCityNameFormulasByNameRunsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetV0CityByCityNameFormulasByNameRunsRequest(c.Server, cityName, name, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GithubWebhookWithBody(ctx context.Context, cityName string, params *GithubWebhookParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGithubWebhookRequestWithBody(c.Server, cityName, params, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GithubWebhook(ctx context.Context, cityName string, params *GithubWebhookParams, body GithubWebhookJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGithubWebhookRequest(c.Server, cityName, params, body)
 	if err != nil {
 		return nil, err
 	}
@@ -17046,6 +17748,84 @@ func NewGetV0CityByCityNameFormulasByNameRunsRequest(server string, cityName str
 	return req, nil
 }
 
+// NewGithubWebhookRequest calls the generic GithubWebhook builder with application/json body
+func NewGithubWebhookRequest(server string, cityName string, params *GithubWebhookParams, body GithubWebhookJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewGithubWebhookRequestWithBody(server, cityName, params, "application/json", bodyReader)
+}
+
+// NewGithubWebhookRequestWithBody generates requests for GithubWebhook with any type of body
+func NewGithubWebhookRequestWithBody(server string, cityName string, params *GithubWebhookParams, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "cityName", cityName, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v0/city/%s/github/webhook", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	if params != nil {
+
+		var headerParam0 string
+
+		headerParam0, err = runtime.StyleParamWithOptions("simple", false, "X-GitHub-Event", params.XGitHubEvent, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+		if err != nil {
+			return nil, err
+		}
+
+		req.Header.Set("X-GitHub-Event", headerParam0)
+
+		var headerParam1 string
+
+		headerParam1, err = runtime.StyleParamWithOptions("simple", false, "X-GitHub-Delivery", params.XGitHubDelivery, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+		if err != nil {
+			return nil, err
+		}
+
+		req.Header.Set("X-GitHub-Delivery", headerParam1)
+
+		var headerParam2 string
+
+		headerParam2, err = runtime.StyleParamWithOptions("simple", false, "X-Hub-Signature-256", params.XHubSignature256, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+		if err != nil {
+			return nil, err
+		}
+
+		req.Header.Set("X-Hub-Signature-256", headerParam2)
+
+	}
+
+	return req, nil
+}
+
 // NewGetV0CityByCityNameHealthRequest generates requests for GetV0CityByCityNameHealth
 func NewGetV0CityByCityNameHealthRequest(server string, cityName string) (*http.Request, error) {
 	var err error
@@ -22237,6 +23017,11 @@ type ClientWithResponsesInterface interface {
 	// GetV0CityByCityNameFormulasByNameRunsWithResponse request
 	GetV0CityByCityNameFormulasByNameRunsWithResponse(ctx context.Context, cityName string, name string, params *GetV0CityByCityNameFormulasByNameRunsParams, reqEditors ...RequestEditorFn) (*GetV0CityByCityNameFormulasByNameRunsResponse, error)
 
+	// GithubWebhookWithBodyWithResponse request with any body
+	GithubWebhookWithBodyWithResponse(ctx context.Context, cityName string, params *GithubWebhookParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*GithubWebhookResponse, error)
+
+	GithubWebhookWithResponse(ctx context.Context, cityName string, params *GithubWebhookParams, body GithubWebhookJSONRequestBody, reqEditors ...RequestEditorFn) (*GithubWebhookResponse, error)
+
 	// GetV0CityByCityNameHealthWithResponse request
 	GetV0CityByCityNameHealthWithResponse(ctx context.Context, cityName string, reqEditors ...RequestEditorFn) (*GetV0CityByCityNameHealthResponse, error)
 
@@ -24018,6 +24803,34 @@ func (r GetV0CityByCityNameFormulasByNameRunsResponse) Status() string {
 
 // StatusCode returns HTTPResponse.StatusCode
 func (r GetV0CityByCityNameFormulasByNameRunsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type GithubWebhookResponse struct {
+	Body                      []byte
+	HTTPResponse              *http.Response
+	JSON202                   *GitHubWebhookResponse
+	ApplicationproblemJSON400 *ErrorModel
+	ApplicationproblemJSON401 *ErrorModel
+	ApplicationproblemJSON404 *ErrorModel
+	ApplicationproblemJSON422 *ErrorModel
+	ApplicationproblemJSON500 *ErrorModel
+	ApplicationproblemJSON503 *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r GithubWebhookResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GithubWebhookResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -26623,6 +27436,23 @@ func (c *ClientWithResponses) GetV0CityByCityNameFormulasByNameRunsWithResponse(
 		return nil, err
 	}
 	return ParseGetV0CityByCityNameFormulasByNameRunsResponse(rsp)
+}
+
+// GithubWebhookWithBodyWithResponse request with arbitrary body returning *GithubWebhookResponse
+func (c *ClientWithResponses) GithubWebhookWithBodyWithResponse(ctx context.Context, cityName string, params *GithubWebhookParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*GithubWebhookResponse, error) {
+	rsp, err := c.GithubWebhookWithBody(ctx, cityName, params, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGithubWebhookResponse(rsp)
+}
+
+func (c *ClientWithResponses) GithubWebhookWithResponse(ctx context.Context, cityName string, params *GithubWebhookParams, body GithubWebhookJSONRequestBody, reqEditors ...RequestEditorFn) (*GithubWebhookResponse, error) {
+	rsp, err := c.GithubWebhook(ctx, cityName, params, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGithubWebhookResponse(rsp)
 }
 
 // GetV0CityByCityNameHealthWithResponse request returning *GetV0CityByCityNameHealthResponse
@@ -29623,6 +30453,74 @@ func ParseGetV0CityByCityNameFormulasByNameRunsResponse(rsp *http.Response) (*Ge
 			return nil, err
 		}
 		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGithubWebhookResponse parses an HTTP response from a GithubWebhookWithResponse call
+func ParseGithubWebhookResponse(rsp *http.Response) (*GithubWebhookResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GithubWebhookResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 202:
+		var dest GitHubWebhookResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON202 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 422:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON422 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON500 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON503 = &dest
 
 	}
 

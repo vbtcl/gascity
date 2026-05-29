@@ -178,7 +178,7 @@ func newSupervisorHumaAPI(mux *http.ServeMux, readOnly bool) huma.API {
 // Huma errors.
 func humaCSRFMiddleware(api huma.API) func(ctx huma.Context, next func(huma.Context)) {
 	return func(ctx huma.Context, next func(huma.Context)) {
-		if isMutationMethod(ctx.Method()) && ctx.Header("X-GC-Request") == "" {
+		if isMutationMethod(ctx.Method()) && !operationSkipsCSRF(ctx.Operation()) && ctx.Header("X-GC-Request") == "" {
 			_ = huma.WriteErr(api, ctx, http.StatusForbidden, "csrf: X-GC-Request header required on mutation endpoints")
 			return
 		}

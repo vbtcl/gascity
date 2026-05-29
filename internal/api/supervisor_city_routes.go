@@ -220,6 +220,20 @@ func (sm *SupervisorMux) registerCityRoutes() {
 		Summary:     "Force rotate the city event log",
 	}, (*Server).humaHandleEventRotate)
 
+	// GitHub webhook ingestion. The signed webhook HMAC is the external
+	// authenticity check, so this operation intentionally skips the internal
+	// X-GC-Request CSRF header used by browser/CLI mutations.
+	cityRegister(sm, huma.Operation{
+		OperationID:   "github-webhook",
+		Method:        http.MethodPost,
+		Path:          "/github/webhook",
+		Summary:       "Ingest a signed GitHub repository webhook",
+		Description:   "Validates X-Hub-Signature-256 against the configured repository monitor secret, decodes supported repository events, and records normalized PR readiness events.",
+		DefaultStatus: http.StatusAccepted,
+		Errors:        []int{http.StatusBadRequest, http.StatusUnauthorized, http.StatusNotFound, http.StatusServiceUnavailable},
+		Metadata:      map[string]any{operationMetadataSkipCSRF: true},
+	}, (*Server).humaHandleGitHubWebhook)
+
 	// Orders.
 	cityGet(sm, "/orders", (*Server).humaHandleOrderList)
 	cityGet(sm, "/orders/check", (*Server).humaHandleOrderCheck)

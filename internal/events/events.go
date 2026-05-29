@@ -124,6 +124,14 @@ const (
 	// MUST NOT carry the password value (asserted by
 	// TestPostgresEventOmitsPassword).
 	PostgresCredentialResolved = "pg.credential_resolved"
+
+	// GitHub PR readiness events. Emitted by the signed webhook ingestion
+	// endpoint after normalizing repository webhook payloads against configured
+	// PR monitors.
+	GitHubPRUpdated        = "github.pr.updated"
+	GitHubPRCheckFailed    = "github.pr.check_failed"
+	GitHubPRConflicted     = "github.pr.conflicted"
+	GitHubMergeGroupFailed = "github.merge_group.failed"
 )
 
 // KnownEventTypes lists every event-type constant this package defines.
@@ -156,6 +164,7 @@ var KnownEventTypes = []string{
 	EventsRotated,
 	StoreMaintenanceDone, StoreMaintenanceFailed,
 	PostgresCredentialResolved,
+	GitHubPRUpdated, GitHubPRCheckFailed, GitHubPRConflicted, GitHubMergeGroupFailed,
 }
 
 // Event is a single recorded occurrence in the system.

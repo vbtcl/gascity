@@ -40,7 +40,10 @@ type cityNamer interface {
 
 // cityScopePrefix is the URL prefix every city-scoped operation
 // registers under.
-const cityScopePrefix = "/v0/city/{cityName}"
+const (
+	cityScopePrefix           = "/v0/city/{cityName}"
+	operationMetadataSkipCSRF = "gc.skip_csrf"
+)
 
 const cityNotFoundOrNotRunningDetailPrefix = "not_found: city not found or not running: "
 
@@ -172,10 +175,18 @@ func cityRegister[I any, O any](sm *SupervisorMux, op huma.Operation,
 	fn func(*Server, context.Context, *I) (*O, error),
 ) {
 	op.Path = cityScopePrefix + op.Path
-	if isMutationMethod(op.Method) {
+	if isMutationMethod(op.Method) && !operationSkipsCSRF(&op) {
 		addMutationCSRFParam(&op)
 	}
 	huma.Register(sm.humaAPI, op, bindCity(sm, fn))
+}
+
+func operationSkipsCSRF(op *huma.Operation) bool {
+	if op == nil || op.Metadata == nil {
+		return false
+	}
+	skip, _ := op.Metadata[operationMetadataSkipCSRF].(bool)
+	return skip
 }
 
 // sseCityPrecheck wraps an SSE precheck method on Server with
