@@ -79,8 +79,24 @@ var (
 	workflowServeIdlePollAttempts  = 3
 	workflowServeWakeSweepInterval = 1 * time.Second
 	workflowServeMaxIdleSleep      = 30 * time.Second
-	workflowServeWaitForWake       = waitForRelevantWorkflowWakeWithTrace
-	workflowTraceNow               = time.Now
+	// workflowServeMinDrainInterval is the minimum wall-clock gap the
+	// control-dispatcher --follow loop enforces between consecutive drains.
+	// The loop watches *every* city-wide bead lifecycle event but only
+	// re-drains its own (usually empty) control queue. In a busy multi-rig city
+	// the bead-event stream never stops, which pinned the idle backoff at zero
+	// and turned the loop into a per-event re-drain. Each drain fans out a batch
+	// of short-lived `bd` query subprocesses, so an unthrottled loop saturated
+	// the shared Dolt server with connections — the pa/beads_hq commit-storm
+	// incident (gc-f4n3gyb), where a single dispatcher's trace grew to ~469 MB/day
+	// of pure wake/idle-exit churn. The floor coalesces bursts of events into a
+	// single drain and bounds the drain (and therefore bd-spawn) rate to at most
+	// one per interval, regardless of event volume, while still letting the
+	// adaptive backoff stretch to workflowServeMaxIdleSleep when genuinely idle.
+	// Override with GC_CONTROL_DISPATCHER_MIN_DRAIN_INTERVAL (a Go duration;
+	// "0" disables the floor and restores per-event draining).
+	workflowServeMinDrainInterval = 2 * time.Second
+	workflowServeWaitForWake      = waitForRelevantWorkflowWakeWithTrace
+	workflowTraceNow              = time.Now
 	// The trace helper is intentionally process-global because workflowTracef
 	// does not carry per-invocation context. Nested installs (serve ->
 	// runControlDispatcherWithStore) reuse the active dedup map so one bad trace
@@ -120,6 +136,22 @@ func followSleepDuration(idleSweeps int) time.Duration {
 		return workflowServeMaxIdleSleep
 	}
 	return d
+}
+
+// applyWorkflowServeMinDrainIntervalEnv lets operators retune the
+// control-dispatcher drain floor without a rebuild (useful mid-incident). An
+// unset or unparseable GC_CONTROL_DISPATCHER_MIN_DRAIN_INTERVAL leaves the
+// compiled default in place; "0" disables the floor entirely.
+func applyWorkflowServeMinDrainIntervalEnv() {
+	v := strings.TrimSpace(os.Getenv("GC_CONTROL_DISPATCHER_MIN_DRAIN_INTERVAL"))
+	if v == "" {
+		return
+	}
+	d, err := time.ParseDuration(v)
+	if err != nil || d < 0 {
+		return
+	}
+	workflowServeMinDrainInterval = d
 }
 
 const workflowServeScanLimit = 20
@@ -525,6 +557,7 @@ func isLegacyOversizedControlEventError(err error) bool {
 }
 
 func runWorkflowServeFollow(agentCfg config.Agent, cityPath, storePath, workQuery string, workEnv map[string]string, stderr io.Writer) error {
+	applyWorkflowServeMinDrainIntervalEnv()
 	ep, err := workflowServeOpenEventsProvider(stderr)
 	if err != nil {
 		return err
@@ -605,8 +638,45 @@ func waitForRelevantWorkflowWake(eventCh <-chan workflowWatchResult, sleepDur ti
 }
 
 func waitForRelevantWorkflowWakeWithTrace(eventCh <-chan workflowWatchResult, sleepDur time.Duration, idleSweeps int) (bool, error) {
-	timer := time.NewTimer(sleepDur)
-	defer timer.Stop()
+	// Coalesce floor: hold an event wake until at least workflowServeMinDrainInterval
+	// has elapsed since this wait began, so a busy city's continuous bead-event
+	// stream cannot drive the loop into a per-event re-drain. Bursts that land
+	// inside the floor collapse into a single wake; the resulting drain rate is
+	// bounded to at most one per interval (the loop drains once per iteration).
+	// See workflowServeMinDrainInterval for the incident this guards against.
+	floor := workflowServeMinDrainInterval
+	if floor < 0 {
+		floor = 0
+	}
+	// Never let the adaptive ceiling fire before the floor: when idle sleep is
+	// shorter than the floor (e.g. idleSweeps==0 → 1s, floor 2s), raise it so
+	// the timer can't undercut the coalesce window.
+	if floor > sleepDur {
+		sleepDur = floor
+	}
+
+	maxTimer := time.NewTimer(sleepDur)
+	defer maxTimer.Stop()
+
+	var floorC <-chan time.Time
+	floorActive := floor > 0
+	if floorActive {
+		floorTimer := time.NewTimer(floor)
+		defer floorTimer.Stop()
+		floorC = floorTimer.C
+	}
+
+	sawEvent := false
+	coalesced := 0
+	var firstEvt events.Event
+	wake := func() (bool, error) {
+		if idleSweeps >= 0 {
+			workflowTracef("serve wake-event type=%s subject=%s idle_sweeps=%d sleep=%s coalesced=%d", firstEvt.Type, firstEvt.Subject, idleSweeps, sleepDur, coalesced)
+		} else {
+			workflowTracef("serve wake-event type=%s subject=%s coalesced=%d", firstEvt.Type, firstEvt.Subject, coalesced)
+		}
+		return true, nil
+	}
 
 	for {
 		select {
@@ -614,16 +684,32 @@ func waitForRelevantWorkflowWakeWithTrace(eventCh <-chan workflowWatchResult, sl
 			if res.err != nil {
 				return false, res.err
 			}
-			if workflowEventRelevant(res.evt) {
-				if idleSweeps >= 0 {
-					workflowTracef("serve wake-event type=%s subject=%s idle_sweeps=%d sleep=%s", res.evt.Type, res.evt.Subject, idleSweeps, sleepDur)
-				} else {
-					workflowTracef("serve wake-event type=%s subject=%s", res.evt.Type, res.evt.Subject)
-				}
-				return true, nil
+			if !workflowEventRelevant(res.evt) {
+				workflowTracef("serve ignore-event type=%s subject=%s", res.evt.Type, res.evt.Subject)
+				continue
 			}
-			workflowTracef("serve ignore-event type=%s subject=%s", res.evt.Type, res.evt.Subject)
-		case <-timer.C:
+			coalesced++
+			if !sawEvent {
+				sawEvent = true
+				firstEvt = res.evt
+			}
+			if !floorActive {
+				// Floor already satisfied (or disabled): drain promptly.
+				return wake()
+			}
+			// Inside the floor window: keep coalescing until floorC fires.
+		case <-floorC:
+			floorActive = false
+			floorC = nil
+			if sawEvent {
+				return wake()
+			}
+			// No event during the floor; keep waiting for the next event or the
+			// adaptive sweep timeout, now honoring events immediately.
+		case <-maxTimer.C:
+			if sawEvent {
+				return wake()
+			}
 			if idleSweeps >= 0 {
 				workflowTracef("serve wake-sweep idle_sweeps=%d sleep=%s", idleSweeps, sleepDur)
 			} else {

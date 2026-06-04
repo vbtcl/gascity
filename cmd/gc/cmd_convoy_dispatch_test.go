@@ -3639,6 +3639,7 @@ work_query = "bd {{.CityName}} {{.Rig}} {{.AgentBase}}"
 }
 
 func TestRunWorkflowServeFollowUsesSweepFallback(t *testing.T) {
+	withoutDrainFloor(t)
 	eventsDir := t.TempDir()
 	ep := newTestProvider(t, eventsDir)
 
@@ -4794,6 +4795,7 @@ func TestFollowSleepDurationBacksOffThenCaps(t *testing.T) {
 }
 
 func TestWaitForRelevantWorkflowWakeReturnsTrueOnRelevantEvent(t *testing.T) {
+	withoutDrainFloor(t)
 	eventCh := make(chan workflowWatchResult, 1)
 	eventCh <- workflowWatchResult{evt: events.Event{Type: events.BeadCreated, Subject: "gc-1"}}
 
@@ -4807,6 +4809,7 @@ func TestWaitForRelevantWorkflowWakeReturnsTrueOnRelevantEvent(t *testing.T) {
 }
 
 func TestWaitForRelevantWorkflowWakeReturnsFalseOnTimer(t *testing.T) {
+	withoutDrainFloor(t)
 	eventCh := make(chan workflowWatchResult) // never receives
 
 	start := time.Now()
@@ -4825,6 +4828,7 @@ func TestWaitForRelevantWorkflowWakeReturnsFalseOnTimer(t *testing.T) {
 }
 
 func TestWaitForRelevantWorkflowWakeFallsThroughIrrelevantEventsToTimer(t *testing.T) {
+	withoutDrainFloor(t)
 	eventCh := make(chan workflowWatchResult, 1)
 	eventCh <- workflowWatchResult{evt: events.Event{Type: events.SessionUpdated}}
 
@@ -4838,6 +4842,7 @@ func TestWaitForRelevantWorkflowWakeFallsThroughIrrelevantEventsToTimer(t *testi
 }
 
 func TestWaitForRelevantWorkflowWakeReturnsWatcherErr(t *testing.T) {
+	withoutDrainFloor(t)
 	eventCh := make(chan workflowWatchResult, 1)
 	eventCh <- workflowWatchResult{err: os.ErrDeadlineExceeded}
 
@@ -4851,6 +4856,7 @@ func TestWaitForRelevantWorkflowWakeReturnsWatcherErr(t *testing.T) {
 }
 
 func TestWaitForRelevantWorkflowWakeTraceIncludesBackoffState(t *testing.T) {
+	withoutDrainFloor(t)
 	tracePath := filepath.Join(t.TempDir(), "workflow-trace.log")
 	t.Setenv("GC_WORKFLOW_TRACE", tracePath)
 
@@ -4871,6 +4877,97 @@ func TestWaitForRelevantWorkflowWakeTraceIncludesBackoffState(t *testing.T) {
 	trace := string(traceBytes)
 	if !strings.Contains(trace, "serve wake-sweep idle_sweeps=3 sleep=5ms") {
 		t.Fatalf("trace = %q, want wake-sweep line with idle_sweeps and sleep", trace)
+	}
+}
+
+// withoutDrainFloor disables the control-dispatcher coalesce floor so tests can
+// exercise the raw wait mechanics (and assert sub-second sleeps) without the
+// production minimum-drain-interval stretching their timing.
+func withoutDrainFloor(t *testing.T) {
+	t.Helper()
+	prev := workflowServeMinDrainInterval
+	workflowServeMinDrainInterval = 0
+	t.Cleanup(func() { workflowServeMinDrainInterval = prev })
+}
+
+func TestWaitForRelevantWorkflowWakeCoalescesEventsWithinFloor(t *testing.T) {
+	prev := workflowServeMinDrainInterval
+	workflowServeMinDrainInterval = 40 * time.Millisecond
+	t.Cleanup(func() { workflowServeMinDrainInterval = prev })
+
+	// Three relevant events are already queued when the wait begins. The floor
+	// must hold them as a single coalesced wake instead of returning on the
+	// first one — this is what bounds the drain (and bd-spawn) rate under a
+	// continuous city-wide event stream.
+	eventCh := make(chan workflowWatchResult, 3)
+	eventCh <- workflowWatchResult{evt: events.Event{Type: events.BeadUpdated, Subject: "gc-1"}}
+	eventCh <- workflowWatchResult{evt: events.Event{Type: events.BeadUpdated, Subject: "gc-2"}}
+	eventCh <- workflowWatchResult{evt: events.Event{Type: events.BeadCreated, Subject: "gc-3"}}
+
+	start := time.Now()
+	// A sub-floor sleepDur (1ms) must be raised to the floor internally.
+	eventWake, err := waitForRelevantWorkflowWakeWithTrace(eventCh, time.Millisecond, 0)
+	elapsed := time.Since(start)
+	if err != nil {
+		t.Fatalf("unexpected err: %v", err)
+	}
+	if !eventWake {
+		t.Fatal("eventWake = false, want true when relevant events arrive")
+	}
+	if elapsed < workflowServeMinDrainInterval {
+		t.Fatalf("returned after %v, want >= floor %v (events must coalesce, not fire per-event)", elapsed, workflowServeMinDrainInterval)
+	}
+}
+
+func TestWaitForRelevantWorkflowWakeFloorRaisesSubFloorSleep(t *testing.T) {
+	prev := workflowServeMinDrainInterval
+	workflowServeMinDrainInterval = 30 * time.Millisecond
+	t.Cleanup(func() { workflowServeMinDrainInterval = prev })
+
+	eventCh := make(chan workflowWatchResult) // never receives
+	start := time.Now()
+	eventWake, err := waitForRelevantWorkflowWakeWithTrace(eventCh, time.Millisecond, 0)
+	elapsed := time.Since(start)
+	if err != nil {
+		t.Fatalf("unexpected err: %v", err)
+	}
+	if eventWake {
+		t.Fatal("eventWake = true, want false when no event arrives")
+	}
+	if elapsed < workflowServeMinDrainInterval {
+		t.Fatalf("returned after %v, want >= floor %v (sub-floor sleepDur must be raised to the floor)", elapsed, workflowServeMinDrainInterval)
+	}
+}
+
+func TestApplyWorkflowServeMinDrainIntervalEnv(t *testing.T) {
+	prev := workflowServeMinDrainInterval
+	t.Cleanup(func() { workflowServeMinDrainInterval = prev })
+
+	// Unset env leaves the compiled default untouched.
+	t.Setenv("GC_CONTROL_DISPATCHER_MIN_DRAIN_INTERVAL", "")
+	workflowServeMinDrainInterval = 7 * time.Second
+	applyWorkflowServeMinDrainIntervalEnv()
+	if workflowServeMinDrainInterval != 7*time.Second {
+		t.Fatalf("unset env changed floor to %v, want 7s preserved", workflowServeMinDrainInterval)
+	}
+
+	// A valid duration overrides; "0" disables the floor.
+	t.Setenv("GC_CONTROL_DISPATCHER_MIN_DRAIN_INTERVAL", "0")
+	applyWorkflowServeMinDrainIntervalEnv()
+	if workflowServeMinDrainInterval != 0 {
+		t.Fatalf("floor = %v, want 0 (disabled) from env", workflowServeMinDrainInterval)
+	}
+	t.Setenv("GC_CONTROL_DISPATCHER_MIN_DRAIN_INTERVAL", "5s")
+	applyWorkflowServeMinDrainIntervalEnv()
+	if workflowServeMinDrainInterval != 5*time.Second {
+		t.Fatalf("floor = %v, want 5s from env", workflowServeMinDrainInterval)
+	}
+
+	// Garbage is ignored (keeps the prior value).
+	t.Setenv("GC_CONTROL_DISPATCHER_MIN_DRAIN_INTERVAL", "not-a-duration")
+	applyWorkflowServeMinDrainIntervalEnv()
+	if workflowServeMinDrainInterval != 5*time.Second {
+		t.Fatalf("floor = %v, want 5s preserved after garbage env", workflowServeMinDrainInterval)
 	}
 }
 
