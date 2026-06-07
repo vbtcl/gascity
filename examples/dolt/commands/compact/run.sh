@@ -33,6 +33,16 @@
 # intentionally not implemented; flatten is sufficient for bloat recovery
 # and avoids the rebase-vs-concurrent-write hazards.
 #
+# A failed integrity check writes a compact-quarantine/<db> marker that
+# disables ALL future compaction and GC for that DB. The common cause is a
+# transient concurrent write during flatten, so a marker older than
+# GC_DOLT_COMPACT_QUARANTINE_STALE_SECS is auto-cleared and retried once the
+# DB reads clean in a low-write window (whole-DB value hash stable across two
+# probes). This bounds a transient quarantine to ~one compaction cycle
+# instead of disabling GC indefinitely; the post-flatten re-verification
+# re-quarantines if the drift is real, so auto-clear is a supervised retry
+# that never GCs unverified data.
+#
 # Runs from the dolt pack's mol-dog-compactor order.
 #
 # Environment:
@@ -67,6 +77,19 @@
 #                                         replaced by '_' to derive the env
 #                                         key; DB names that differ only by
 #                                         '-' vs '_' share that key.
+#   GC_DOLT_COMPACT_QUARANTINE_STALE_SECS
+#     (default: 21600) — a post-flatten integrity quarantine marker older
+#                       than this is auto-cleared and retried once the DB
+#                       reads clean in a low-write window. The post-flatten
+#                       re-verification re-quarantines if real drift remains,
+#                       so auto-clear never bypasses integrity enforcement.
+#   GC_DOLT_COMPACT_QUARANTINE_SETTLE_SECS
+#     (default: 5) — settle interval between the two whole-DB value-hash
+#                       probes used to confirm a low-write window before
+#                       auto-clearing a stale quarantine marker.
+#   GC_DOLT_COMPACT_QUARANTINE_AUTOCLEAR
+#     (default: 1) — set to 0/false to disable stale-quarantine auto-clear
+#                       entirely (markers then require manual intervention).
 set -eu
 
 : "${GC_CITY_PATH:?GC_CITY_PATH must be set}"
@@ -139,6 +162,9 @@ pending_push_max_age_secs="${GC_DOLT_COMPACT_PENDING_PUSH_MAX_AGE_SECS:-172800}"
 compact_remote="${GC_DOLT_COMPACT_REMOTE:-}"
 dry_run="${GC_DOLT_COMPACT_DRY_RUN:-}"
 only_dbs="${GC_DOLT_COMPACT_ONLY_DBS:-}"
+quarantine_stale_secs="${GC_DOLT_COMPACT_QUARANTINE_STALE_SECS:-21600}"
+quarantine_settle_secs="${GC_DOLT_COMPACT_QUARANTINE_SETTLE_SECS:-5}"
+quarantine_autoclear="${GC_DOLT_COMPACT_QUARANTINE_AUTOCLEAR:-1}"
 
 case "$threshold_commits" in
   ''|*[!0-9]*)
@@ -168,6 +194,22 @@ case "$pending_push_max_age_secs" in
   ''|*[!0-9]*)
     printf 'compact: invalid GC_DOLT_COMPACT_PENDING_PUSH_MAX_AGE_SECS=%s (must be a non-negative integer)\n' \
       "$pending_push_max_age_secs" >&2
+    exit 2
+    ;;
+esac
+
+case "$quarantine_stale_secs" in
+  ''|*[!0-9]*)
+    printf 'compact: invalid GC_DOLT_COMPACT_QUARANTINE_STALE_SECS=%s (must be a non-negative integer)\n' \
+      "$quarantine_stale_secs" >&2
+    exit 2
+    ;;
+esac
+
+case "$quarantine_settle_secs" in
+  ''|*[!0-9]*)
+    printf 'compact: invalid GC_DOLT_COMPACT_QUARANTINE_SETTLE_SECS=%s (must be a non-negative integer)\n' \
+      "$quarantine_settle_secs" >&2
     exit 2
     ;;
 esac
@@ -1000,6 +1042,116 @@ clear_compact_marker() {
   rm -f "$(compact_marker_path "$dir" "$db")"
 }
 
+# quarantine_marker_is_stale — return 0 when the db's integrity quarantine
+# marker is older than the stale threshold, using the marker's PRESERVED
+# created_at (write_compact_marker keeps the original created_at across
+# rewrites) so a re-quarantine does not reset the clock. Returns 1 when the
+# marker is fresh or its created_at is missing/unparseable.
+quarantine_marker_is_stale() {
+  db="$1"
+  created_epoch=$(compact_marker_created_at_epoch "$quarantine_dir" "$db" || true)
+  if [ -z "$created_epoch" ]; then
+    printf 'compact: db=%s quarantine marker has missing or invalid created_at — leaving marker for manual review\n' \
+      "$db" >&2
+    return 1
+  fi
+  now_epoch=$(date -u +%s)
+  age_secs=$(( now_epoch - created_epoch ))
+  if [ "$age_secs" -lt 0 ]; then
+    age_secs=0
+  fi
+  if [ "$age_secs" -lt "$quarantine_stale_secs" ]; then
+    printf 'compact: db=%s quarantine age=%ss < stale_threshold=%ss — leaving marker for manual review\n' \
+      "$db" "$age_secs" "$quarantine_stale_secs" >&2
+    return 1
+  fi
+  printf 'compact: db=%s quarantine age=%ss >= stale_threshold=%ss — checking whether auto-clear is safe\n' \
+    "$db" "$age_secs" "$quarantine_stale_secs" >&2
+  return 0
+}
+
+# quarantine_db_reads_clean_and_quiescent — return 0 only when the db now
+# reads clean AND is in a low-write window, so a stale integrity quarantine
+# can be safely retried this run.
+#
+#   clean            — every user-table row count reads without error
+#                      (preflight_counts succeeds).
+#   low-write window — DOLT_HASHOF_DB() is identical across two probes a
+#                      short settle apart. A concurrent writer (the cause of
+#                      the original transient drift) changes the hash between
+#                      probes; a quiescent DB does not.
+#
+# This never bypasses integrity enforcement: clearing the marker only lets
+# flatten run again, and flatten's own post-flatten re-verification
+# re-quarantines if genuine drift remains.
+quarantine_db_reads_clean_and_quiescent() {
+  db="$1"
+
+  if ! quarantine_first_hash=$(db_value_hash "$db"); then
+    printf 'compact: db=%s quarantine auto-clear deferred — value hash probe failed\n' "$db" >&2
+    return 1
+  fi
+  if [ -z "$quarantine_first_hash" ]; then
+    printf 'compact: db=%s quarantine auto-clear deferred — value hash probe returned empty\n' "$db" >&2
+    return 1
+  fi
+
+  quarantine_clean_tmp=$(mktemp)
+  if ! preflight_counts "$db" "$quarantine_clean_tmp"; then
+    rm -f "$quarantine_clean_tmp"
+    printf 'compact: db=%s quarantine auto-clear deferred — row counts did not read clean\n' "$db" >&2
+    return 1
+  fi
+  rm -f "$quarantine_clean_tmp"
+
+  if [ "$quarantine_settle_secs" -gt 0 ]; then
+    sleep "$quarantine_settle_secs"
+  fi
+
+  if ! quarantine_second_hash=$(db_value_hash "$db"); then
+    printf 'compact: db=%s quarantine auto-clear deferred — second value hash probe failed\n' "$db" >&2
+    return 1
+  fi
+  if [ "$quarantine_first_hash" != "$quarantine_second_hash" ]; then
+    printf 'compact: db=%s quarantine auto-clear deferred — DB not quiescent (value hash %s -> %s; writer active)\n' \
+      "$db" "$quarantine_first_hash" "$quarantine_second_hash" >&2
+    return 1
+  fi
+  return 0
+}
+
+# maybe_clear_stale_quarantine — clear a stale integrity quarantine marker
+# when the DB now reads clean in a low-write window, so this run can retry
+# compaction. Returns 0 when the marker was cleared (caller proceeds), 1 when
+# it must stay in place (caller bails to manual intervention).
+maybe_clear_stale_quarantine() {
+  db="$1"
+
+  case "$quarantine_autoclear" in
+    0|false|FALSE|no|NO)
+      return 1
+      ;;
+  esac
+
+  if [ -n "$dry_run" ]; then
+    printf 'compact: db=%s quarantine present — dry-run (auto-clear not attempted)\n' "$db"
+    return 1
+  fi
+
+  quarantine_marker_is_stale "$db" || return 1
+
+  q_reason=$(compact_marker_value "$quarantine_dir" "$db" reason || true)
+  printf 'compact: db=%s stale quarantine reason=%s — verifying integrity for auto-clear...\n' \
+    "$db" "${q_reason:-unknown}" >&2
+
+  quarantine_db_reads_clean_and_quiescent "$db" || return 1
+
+  clear_compact_marker "$quarantine_dir" "$db"
+  printf 'compact: db=%s stale quarantine auto-cleared — DB read clean and quiescent; retrying compaction (post-flatten re-verification re-quarantines if drift remains)\n' \
+    "$db" >&2
+  return 0
+}
+
 run_full_gc() {
   db="$1"
   failure_prefix="$2"
@@ -1242,9 +1394,14 @@ flatten_database() {
   fi
 
   if has_compact_marker "$quarantine_dir" "$db"; then
-    printf 'compact: db=%s integrity quarantine marker exists — manual intervention required before compaction or GC\n' \
-      "$db" >&2
-    return 1
+    if ! maybe_clear_stale_quarantine "$db"; then
+      printf 'compact: db=%s integrity quarantine marker exists — manual intervention required before compaction or GC\n' \
+        "$db" >&2
+      return 1
+    fi
+    # Stale quarantine auto-cleared after the DB verified clean in a
+    # low-write window. Fall through to normal compaction; the post-flatten
+    # re-verification re-quarantines if real drift remains.
   fi
 
   if has_compact_marker "$pending_gc_dir" "$db"; then

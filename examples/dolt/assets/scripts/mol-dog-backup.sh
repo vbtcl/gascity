@@ -143,6 +143,7 @@ fi
 TOTAL=$(printf '%s\n' "$DATABASES" | awk 'NF {count++} END {print count + 0}')
 SYNCED=0
 FAILED=0
+TIMED_OUT=0
 FAILED_DBS=""
 
 for db in $DATABASES; do
@@ -151,10 +152,20 @@ for db in $DATABASES; do
         append_failed_db "$db(not found)"
         continue
     fi
-    if (cd "$db_dir" && run_bounded 120 dolt backup sync "${db}-backup" 2>/dev/null); then
+    # run_bounded exits 124 on wall-clock timeout (coreutils convention).
+    # Distinguish that from a genuine sync error: a 120s timeout almost
+    # always means the journal/transfer is too large (bloat), which is the
+    # signal operators need to diagnose creeping journal growth from the
+    # advisory; other non-zero codes are real backup errors.
+    sync_rc=0
+    (cd "$db_dir" && run_bounded 120 dolt backup sync "${db}-backup" 2>/dev/null) || sync_rc=$?
+    if [ "$sync_rc" -eq 0 ]; then
         SYNCED=$((SYNCED + 1))
+    elif [ "$sync_rc" -eq 124 ]; then
+        TIMED_OUT=$((TIMED_OUT + 1))
+        append_failed_db "$db(sync timed out >120s — likely journal bloat/size)"
     else
-        append_failed_db "$db(sync failed)"
+        append_failed_db "$db(sync failed rc=$sync_rc)"
     fi
 done
 
@@ -178,8 +189,12 @@ fi
 # --- Step 4: Report ---
 
 if [ "$FAILED_COUNT" -gt 0 ]; then
+    SYNC_FAIL_SUBJECT="Backup dog: $FAILED_COUNT/$TOTAL databases failed to sync [MEDIUM]"
+    if [ "$TIMED_OUT" -gt 0 ]; then
+        SYNC_FAIL_SUBJECT="Backup dog: $FAILED_COUNT/$TOTAL databases failed to sync ($TIMED_OUT timed out — journal bloat?) [MEDIUM]"
+    fi
     gc mail send mayor/ \
-        -s "Backup dog: $FAILED_COUNT/$TOTAL databases failed to sync [MEDIUM]" \
+        -s "$SYNC_FAIL_SUBJECT" \
         -m "Failed databases:$FAILED_DBS" \
         2>/dev/null || true
 fi
