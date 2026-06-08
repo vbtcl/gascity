@@ -36,6 +36,27 @@ file_mtime() {
     printf '%s\n' "$file_mtime_value"
 }
 
+# marker_age_seconds — age of a compact marker, preferring its recorded
+# created_at (RFC3339) and falling back to file mtime. Always prints a
+# non-negative integer.
+marker_age_seconds() {
+    marker_file_path="$1"
+    marker_created_at=$(awk 'index($0, "created_at=") == 1 { print substr($0, 12); exit }' "$marker_file_path" 2>/dev/null || true)
+    marker_created_epoch=""
+    if [ -n "$marker_created_at" ]; then
+        marker_created_epoch=$(date -u -d "$marker_created_at" +%s 2>/dev/null \
+            || date -ju -f "%Y-%m-%dT%H:%M:%SZ" "$marker_created_at" +%s 2>/dev/null || true)
+    fi
+    if [ -z "$marker_created_epoch" ]; then
+        marker_created_epoch=$(file_mtime "$marker_file_path")
+    fi
+    marker_age=$(( $(date +%s) - marker_created_epoch ))
+    if [ "$marker_age" -lt 0 ]; then
+        marker_age=0
+    fi
+    printf '%s\n' "$marker_age"
+}
+
 backup_path_matches_db() {
     db_name="$1"
     backup_rel_path="$2"
@@ -154,19 +175,69 @@ if [ -n "$BACKUP_ELIGIBLE_DBS" ]; then
     fi
 fi
 
+# Compaction/GC quarantine markers. A failed post-flatten integrity check
+# writes compact-quarantine/<db>, which disables ALL future compaction and
+# GC for that DB until the marker is cleared. Left unattended this is silent:
+# the noms journal grows unbounded toward the "corrupted journal" city-down
+# threshold. Surface it loudly so a stuck quarantine cannot hide.
+QUARANTINE_DIR="$PACK_STATE_DIR/compact-quarantine"
+QUARANTINE_COUNT=0
+QUARANTINE_ITEMS=""
+QUARANTINE_WARN=""
+if [ -d "$QUARANTINE_DIR" ]; then
+    for marker in "$QUARANTINE_DIR"/*; do
+        [ -f "$marker" ] || continue
+        q_db=$(basename "$marker")
+        # Only count markers that actually disable GC: files named exactly
+        # after a valid database name (matching the compactor's own
+        # has_compact_marker lookup). Operator archives such as
+        # "beads_hq.stale-cleared-20260607" are renamed out of that form and
+        # no longer block compaction, so they must not raise the advisory.
+        case "$q_db" in
+            [A-Za-z0-9_]*) ;;
+            *) continue ;;
+        esac
+        case "$q_db" in
+            *[!A-Za-z0-9_-]*) continue ;;
+        esac
+        q_reason=$(awk 'index($0, "reason=") == 1 { print substr($0, 8); exit }' "$marker" 2>/dev/null || true)
+        q_age=$(marker_age_seconds "$marker")
+        q_age_h=$((q_age / 3600))
+        QUARANTINE_COUNT=$((QUARANTINE_COUNT + 1))
+        if [ -n "$q_reason" ]; then
+            q_item="$q_db (${q_age_h}h, $q_reason)"
+        else
+            q_item="$q_db (${q_age_h}h)"
+        fi
+        if [ -n "$QUARANTINE_ITEMS" ]; then
+            QUARANTINE_ITEMS="$QUARANTINE_ITEMS; $q_item"
+        else
+            QUARANTINE_ITEMS="$q_item"
+        fi
+    done
+fi
+if [ "$QUARANTINE_COUNT" -gt 0 ]; then
+    QUARANTINE_WARN=" [WARN: $QUARANTINE_COUNT DB(s) under compaction/GC quarantine — GC disabled, journal-bloat/corruption risk: $QUARANTINE_ITEMS]"
+fi
+
 # --- Step 3: Compose report and escalate if critical ---
 
-WARNINGS="${LATENCY_WARN}${CONN_WARN}${ORPHAN_WARN}${BACKUP_STALE}"
+WARNINGS="${LATENCY_WARN}${CONN_WARN}${ORPHAN_WARN}${BACKUP_STALE}${QUARANTINE_WARN}"
 if [ -n "$WARNINGS" ]; then
+    ADVISORY_SUBJECT="Dolt health advisory [MEDIUM]"
+    if [ "$QUARANTINE_COUNT" -gt 0 ]; then
+        ADVISORY_SUBJECT="Dolt health advisory: $QUARANTINE_COUNT DB(s) under compaction/GC quarantine [HIGH]"
+    fi
     gc mail send mayor/ \
-        -s "Dolt health advisory [MEDIUM]" \
+        -s "$ADVISORY_SUBJECT" \
         -m "Latency: ${LATENCY_S}s${LATENCY_WARN}
 Connections: ${CONN_COUNT}/${CONN_MAX}${CONN_WARN}
 Disk: ${DISK_USAGE}
-Orphan DBs: ${ORPHAN_COUNT}${ORPHAN_WARN}${BACKUP_STALE}" \
+Orphan DBs: ${ORPHAN_COUNT}${ORPHAN_WARN}${BACKUP_STALE}
+Quarantine: ${QUARANTINE_COUNT}${QUARANTINE_WARN}" \
         2>/dev/null || true
 fi
 
-SUMMARY="doctor — server: ok, latency: ${LATENCY_S}s, conns: ${CONN_COUNT}/${CONN_MAX}, disk: ${DISK_USAGE}, orphans: ${ORPHAN_COUNT}"
+SUMMARY="doctor — server: ok, latency: ${LATENCY_S}s, conns: ${CONN_COUNT}/${CONN_MAX}, disk: ${DISK_USAGE}, orphans: ${ORPHAN_COUNT}, quarantined: ${QUARANTINE_COUNT}"
 gc session nudge deacon/ "DOG_DONE: $SUMMARY" 2>/dev/null || true
 echo "doctor: $SUMMARY"

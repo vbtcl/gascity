@@ -559,6 +559,17 @@ case "$query" in
       print_cell ""
       exit 0
     fi
+    if [ "$mode" = "quarantine_writer_active" ]; then
+      calls_file="$hash_state_file.hashof-calls"
+      calls=0
+      if [ -f "$calls_file" ]; then
+        calls="$(cat "$calls_file")"
+      fi
+      calls=$((calls + 1))
+      printf '%%s\n' "$calls" > "$calls_file"
+      print_cell "hash-drift-$calls"
+      exit 0
+    fi
     # row_count_gain_with_stable_hashes models the narrow probe-ordering race
     # where the preflight row count is stale but the preflight value hashes
     # already match the post-flatten values.
@@ -3138,5 +3149,248 @@ exit 0
 	}
 	if strings.Contains(string(gcLog), "prod_dev backup") {
 		t.Fatalf("fresh prod_dev backup should not be reported stale, log:\n%s", gcLog)
+	}
+}
+
+func writeCompactQuarantineMarker(t *testing.T, cityPath, db, reason, createdAt string) string {
+	t.Helper()
+	dir := filepath.Join(cityPath, ".gc", "runtime", "packs", "dolt", "compact-quarantine")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatalf("mkdir quarantine dir: %v", err)
+	}
+	marker := filepath.Join(dir, db)
+	contents := fmt.Sprintf("db=%s\nreason=%s\ncreated_at=%s\n", db, reason, createdAt)
+	if err := os.WriteFile(marker, []byte(contents), 0o600); err != nil {
+		t.Fatalf("write quarantine marker: %v", err)
+	}
+	return marker
+}
+
+func TestCompactScriptAutoClearsStaleQuarantineWhenDBQuiescent(t *testing.T) {
+	fixture := newCompactScriptFixture(t)
+	marker := writeCompactQuarantineMarker(t, fixture.cityPath, "beads",
+		"post-flatten value hash changed without row-count increase",
+		"2020-01-01T00:00:00Z")
+	out, err := fixture.run(t, "success",
+		"GC_DOLT_COMPACT_THRESHOLD_COMMITS=500",
+		"GC_DOLT_COMPACT_QUARANTINE_STALE_SECS=0",
+		"GC_DOLT_COMPACT_QUARANTINE_SETTLE_SECS=0",
+	)
+	if err != nil {
+		t.Fatalf("compact should succeed after auto-clearing a stale quarantine: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "stale quarantine auto-cleared") {
+		t.Fatalf("output missing stale-quarantine auto-clear line:\n%s", out)
+	}
+	if strings.Contains(out, "manual intervention required") {
+		t.Fatalf("auto-cleared run must not demand manual intervention:\n%s", out)
+	}
+	if _, statErr := os.Stat(marker); !os.IsNotExist(statErr) {
+		t.Fatalf("stale quarantine marker should be removed, stat err=%v", statErr)
+	}
+	data, err := os.ReadFile(fixture.doltLog)
+	if err != nil {
+		t.Fatalf("read dolt log: %v", err)
+	}
+	log := string(data)
+	for _, want := range []string{"DOLT_RESET", "DOLT_COMMIT", "DOLT_GC"} {
+		if !strings.Contains(log, want) {
+			t.Fatalf("auto-cleared db should re-run compaction (missing %s):\n%s", want, log)
+		}
+	}
+}
+
+func TestCompactScriptKeepsFreshQuarantineMarker(t *testing.T) {
+	fixture := newCompactScriptFixture(t)
+	createdAt := time.Now().UTC().Format("2006-01-02T15:04:05Z")
+	marker := writeCompactQuarantineMarker(t, fixture.cityPath, "beads",
+		"post-flatten value hash changed without row-count increase", createdAt)
+	out, err := fixture.run(t, "success",
+		"GC_DOLT_COMPACT_THRESHOLD_COMMITS=500",
+		"GC_DOLT_COMPACT_QUARANTINE_SETTLE_SECS=0",
+	)
+	if err == nil {
+		t.Fatalf("compact must fail while a fresh quarantine marker blocks it:\n%s", out)
+	}
+	if !strings.Contains(out, "integrity quarantine marker exists") {
+		t.Fatalf("fresh quarantine should block with the manual-intervention message:\n%s", out)
+	}
+	if !strings.Contains(out, "leaving marker for manual review") {
+		t.Fatalf("fresh quarantine should explain it is not yet stale:\n%s", out)
+	}
+	if _, statErr := os.Stat(marker); statErr != nil {
+		t.Fatalf("fresh quarantine marker must be preserved: %v", statErr)
+	}
+	// A fresh quarantine blocks before any dolt call, so dolt.log may not
+	// exist at all — its absence is itself proof that GC did not run.
+	if data, readErr := os.ReadFile(fixture.doltLog); readErr == nil {
+		if strings.Contains(string(data), "DOLT_GC") {
+			t.Fatalf("fresh-quarantined db must not run GC:\n%s", string(data))
+		}
+	}
+}
+
+func TestCompactScriptDoesNotAutoClearStaleQuarantineWhenWriterActive(t *testing.T) {
+	fixture := newCompactScriptFixture(t)
+	marker := writeCompactQuarantineMarker(t, fixture.cityPath, "beads",
+		"post-flatten value hash changed without row-count increase",
+		"2020-01-01T00:00:00Z")
+	out, err := fixture.run(t, "quarantine_writer_active",
+		"GC_DOLT_COMPACT_THRESHOLD_COMMITS=500",
+		"GC_DOLT_COMPACT_QUARANTINE_STALE_SECS=0",
+		"GC_DOLT_COMPACT_QUARANTINE_SETTLE_SECS=0",
+	)
+	if err == nil {
+		t.Fatalf("compact must not clear a stale quarantine while a writer is active:\n%s", out)
+	}
+	if !strings.Contains(out, "not quiescent") {
+		t.Fatalf("output should explain the DB was not quiescent:\n%s", out)
+	}
+	if !strings.Contains(out, "integrity quarantine marker exists") {
+		t.Fatalf("non-quiescent stale quarantine should still block:\n%s", out)
+	}
+	if _, statErr := os.Stat(marker); statErr != nil {
+		t.Fatalf("non-quiescent quarantine marker must be preserved: %v", statErr)
+	}
+	data, err := os.ReadFile(fixture.doltLog)
+	if err != nil {
+		t.Fatalf("read dolt log: %v", err)
+	}
+	if strings.Contains(string(data), "DOLT_GC") {
+		t.Fatalf("non-quiescent quarantined db must not run GC:\n%s", string(data))
+	}
+}
+
+func TestCompactScriptQuarantineAutoClearKillSwitch(t *testing.T) {
+	fixture := newCompactScriptFixture(t)
+	marker := writeCompactQuarantineMarker(t, fixture.cityPath, "beads",
+		"post-flatten value hash changed without row-count increase",
+		"2020-01-01T00:00:00Z")
+	out, err := fixture.run(t, "success",
+		"GC_DOLT_COMPACT_THRESHOLD_COMMITS=500",
+		"GC_DOLT_COMPACT_QUARANTINE_STALE_SECS=0",
+		"GC_DOLT_COMPACT_QUARANTINE_AUTOCLEAR=0",
+	)
+	if err == nil {
+		t.Fatalf("compact must keep the quarantine when auto-clear is disabled:\n%s", out)
+	}
+	if !strings.Contains(out, "integrity quarantine marker exists") {
+		t.Fatalf("kill switch should preserve the manual-intervention block:\n%s", out)
+	}
+	if _, statErr := os.Stat(marker); statErr != nil {
+		t.Fatalf("quarantine marker must be preserved when auto-clear disabled: %v", statErr)
+	}
+	// Auto-clear disabled blocks before any dolt call, so dolt.log may not
+	// exist — its absence is itself proof that GC did not run.
+	if data, readErr := os.ReadFile(fixture.doltLog); readErr == nil {
+		if strings.Contains(string(data), "DOLT_GC") {
+			t.Fatalf("auto-clear-disabled quarantined db must not run GC:\n%s", string(data))
+		}
+	}
+}
+
+func TestBackupScriptDistinguishesSyncTimeoutFromError(t *testing.T) {
+	cityPath := t.TempDir()
+	dataDir := filepath.Join(cityPath, "dolt-data")
+	if err := os.MkdirAll(filepath.Join(dataDir, "prod", ".dolt"), 0o755); err != nil {
+		t.Fatalf("mkdir db: %v", err)
+	}
+	binDir := t.TempDir()
+	gcLogPath := writeDogFakeGC(t, binDir)
+	// syncExit 124 is the coreutils timeout exit code; the bounded sync
+	// wrapper passes it through, so the script sees a timeout instantly.
+	_ = writeBackupFakeDolt(t, binDir, "1.86.2", 124)
+
+	out := runDogScript(t, "mol-dog-backup.sh", binDir, cityPath, dataDir, "GC_BACKUP_DATABASES=prod")
+	if !strings.Contains(out, "synced: 0/1") {
+		t.Fatalf("unexpected backup summary:\n%s", out)
+	}
+	gcLog, err := os.ReadFile(gcLogPath)
+	if err != nil {
+		t.Fatalf("read gc log: %v", err)
+	}
+	log := string(gcLog)
+	if !strings.Contains(log, "Backup dog: 1/1 databases failed to sync") {
+		t.Fatalf("failure mail should still count databases, log:\n%s", log)
+	}
+	if !strings.Contains(log, "timed out") {
+		t.Fatalf("backup sync timeout should be labeled distinctly from a generic error, log:\n%s", log)
+	}
+	if !strings.Contains(log, "journal bloat") {
+		t.Fatalf("timeout advisory should hint at journal bloat, log:\n%s", log)
+	}
+}
+
+func TestBackupScriptLabelsSyncErrorWithReturnCode(t *testing.T) {
+	cityPath := t.TempDir()
+	dataDir := filepath.Join(cityPath, "dolt-data")
+	if err := os.MkdirAll(filepath.Join(dataDir, "prod", ".dolt"), 0o755); err != nil {
+		t.Fatalf("mkdir db: %v", err)
+	}
+	binDir := t.TempDir()
+	gcLogPath := writeDogFakeGC(t, binDir)
+	_ = writeBackupFakeDolt(t, binDir, "1.86.2", 7)
+
+	out := runDogScript(t, "mol-dog-backup.sh", binDir, cityPath, dataDir, "GC_BACKUP_DATABASES=prod")
+	if !strings.Contains(out, "synced: 0/1") {
+		t.Fatalf("unexpected backup summary:\n%s", out)
+	}
+	gcLog, err := os.ReadFile(gcLogPath)
+	if err != nil {
+		t.Fatalf("read gc log: %v", err)
+	}
+	log := string(gcLog)
+	if !strings.Contains(log, "sync failed rc=7") {
+		t.Fatalf("non-timeout sync failure should record its return code, log:\n%s", log)
+	}
+	if strings.Contains(log, "timed out") {
+		t.Fatalf("a non-timeout failure must not be labeled a timeout, log:\n%s", log)
+	}
+}
+
+func TestDoctorScriptAdvisesOnCompactQuarantineMarker(t *testing.T) {
+	cityPath := t.TempDir()
+	dataDir := filepath.Join(cityPath, "dolt-data")
+	if err := os.MkdirAll(dataDir, 0o755); err != nil {
+		t.Fatalf("mkdir data dir: %v", err)
+	}
+	writeCompactQuarantineMarker(t, cityPath, "beads_hq",
+		"post-flatten value hash changed without row-count increase",
+		"2020-01-01T00:00:00Z")
+
+	binDir := t.TempDir()
+	gcLogPath := writeDogFakeGC(t, binDir)
+	writeExecutable(t, filepath.Join(binDir, "dolt"), `#!/usr/bin/env bash
+set -euo pipefail
+case "$*" in
+  *"COUNT(*) FROM information_schema.PROCESSLIST"*)
+    printf 'COUNT(*)\n1\n'
+    exit 0
+    ;;
+  *"SHOW DATABASES"*)
+    printf 'Database\nbeads_hq\n'
+    exit 0
+    ;;
+esac
+exit 0
+`)
+
+	out := runDogScript(t, "mol-dog-doctor.sh", binDir, cityPath, dataDir)
+	if !strings.Contains(out, "server: ok") {
+		t.Fatalf("unexpected doctor output:\n%s", out)
+	}
+	if !strings.Contains(out, "quarantined: 1") {
+		t.Fatalf("doctor summary should report the quarantine count:\n%s", out)
+	}
+	gcLog, err := os.ReadFile(gcLogPath)
+	if err != nil {
+		t.Fatalf("read gc log: %v", err)
+	}
+	log := string(gcLog)
+	if !strings.Contains(log, "under compaction/GC quarantine") {
+		t.Fatalf("doctor advisory should warn about the quarantine marker, log:\n%s", log)
+	}
+	if !strings.Contains(log, "beads_hq") {
+		t.Fatalf("doctor advisory should name the quarantined database, log:\n%s", log)
 	}
 }
