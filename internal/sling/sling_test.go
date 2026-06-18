@@ -1313,7 +1313,13 @@ func TestDoSlingBatchDoesNotFallbackOnQuerierLookupError(t *testing.T) {
 	}
 }
 
-func TestSlingRouteBeadForceAllowsMissingBead(t *testing.T) {
+// TestSlingRouteBeadForceRejectsMissingSameRigBead asserts that --force does
+// NOT manufacture work for a phantom/malformed bead ID when the local store is
+// authoritative for it (same-rig). This is the gc-dv3psyz fix: a dot-stripped
+// child bead ID (bo-x.11 -> bo-x11) that resolves to nothing must not spawn a
+// worker session on an empty branch. (Cross-rig --force still allows remote
+// dispatch -- see TestDoSlingForceSkipsCrossRig.)
+func TestSlingRouteBeadForceRejectsMissingSameRigBead(t *testing.T) {
 	runner := newFakeRunner()
 	deps := testDeps(&config.City{Workspace: config.Workspace{Name: "test"}}, runtime.NewFake(), runner.run)
 	deps.Store = beads.NewMemStore()
@@ -1323,15 +1329,16 @@ func TestSlingRouteBeadForceAllowsMissingBead(t *testing.T) {
 	}
 
 	a := config.Agent{Name: "mayor", MaxActiveSessions: intPtr(1)}
-	result, err := s.RouteBead(context.Background(), "BL-404", a, RouteOpts{Force: true})
-	if err != nil {
-		t.Fatalf("RouteBead force: %v", err)
+	_, err = s.RouteBead(context.Background(), "BL-404", a, RouteOpts{Force: true})
+	if err == nil {
+		t.Fatal("RouteBead force error = nil, want missing bead error")
 	}
-	if len(runner.calls) != 1 {
-		t.Fatalf("runner calls = %#v, want one call", runner.calls)
+	var missing *MissingBeadError
+	if !errors.As(err, &missing) {
+		t.Fatalf("RouteBead force error = %T %[1]v, want MissingBeadError", err)
 	}
-	if len(result.MetadataErrors) != 1 || !strings.Contains(result.MetadataErrors[0], "forced dispatch skipped missing-bead validation") {
-		t.Fatalf("MetadataErrors = %#v, want forced missing-bead warning", result.MetadataErrors)
+	if len(runner.calls) != 0 {
+		t.Fatalf("runner calls = %#v, want none (no phantom dispatch)", runner.calls)
 	}
 	all, err := deps.Store.List(beads.ListQuery{AllowScan: true})
 	if err != nil {
@@ -1339,6 +1346,73 @@ func TestSlingRouteBeadForceAllowsMissingBead(t *testing.T) {
 	}
 	if len(all) != 0 {
 		t.Fatalf("stored beads = %#v, want no orphan auto-convoy", all)
+	}
+}
+
+// TestSlingRouteBeadForceSkipsClosedBead asserts that --force does not
+// re-dispatch a resolved (closed) bead: the work is done, so routing it again
+// would burn a worker session. The fresh-read state guard (gc-dv3psyz) treats
+// it as an idempotent no-op with a visible warning.
+func TestSlingRouteBeadForceSkipsClosedBead(t *testing.T) {
+	runner := newFakeRunner()
+	deps := testDeps(&config.City{Workspace: config.Workspace{Name: "test"}}, runtime.NewFake(), runner.run)
+	deps.Store = beads.NewMemStoreFrom(0, []beads.Bead{
+		{ID: "BL-7", Title: "done", Type: "task", Status: "closed", Metadata: map[string]string{}},
+	}, nil)
+	s, err := New(deps)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	a := config.Agent{Name: "mayor", MaxActiveSessions: intPtr(1)}
+	result, err := s.RouteBead(context.Background(), "BL-7", a, RouteOpts{Force: true})
+	if err != nil {
+		t.Fatalf("RouteBead force closed: %v", err)
+	}
+	if !result.Idempotent {
+		t.Fatalf("result.Idempotent = false, want true (closed bead skipped)")
+	}
+	if len(runner.calls) != 0 {
+		t.Fatalf("runner calls = %#v, want none (no re-dispatch of resolved bead)", runner.calls)
+	}
+	foundWarning := false
+	for _, w := range result.BeadWarnings {
+		if strings.Contains(w, "already resolved (closed)") {
+			foundWarning = true
+			break
+		}
+	}
+	if !foundWarning {
+		t.Fatalf("BeadWarnings = %#v, want resolved-skip warning", result.BeadWarnings)
+	}
+}
+
+// TestSlingRouteBeadForceSkipsAlreadyRoutedSameTarget asserts that even under
+// --force the dispatcher does not double-dispatch a bead already routed to the
+// same target. This is the stale-snapshot double-dispatch guard (gc-dv3psyz):
+// two dispatch ticks acting on the same ready bead must not each spawn a
+// worker.
+func TestSlingRouteBeadForceSkipsAlreadyRoutedSameTarget(t *testing.T) {
+	runner := newFakeRunner()
+	deps := testDeps(&config.City{Workspace: config.Workspace{Name: "test"}}, runtime.NewFake(), runner.run)
+	deps.Store = beads.NewMemStoreFrom(0, []beads.Bead{
+		{ID: "BL-8", Title: "in flight", Type: "task", Status: "open", Metadata: map[string]string{"gc.routed_to": "mayor"}},
+	}, nil)
+	s, err := New(deps)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	a := config.Agent{Name: "mayor", MaxActiveSessions: intPtr(1)}
+	result, err := s.RouteBead(context.Background(), "BL-8", a, RouteOpts{Force: true})
+	if err != nil {
+		t.Fatalf("RouteBead force already-routed: %v", err)
+	}
+	if !result.Idempotent {
+		t.Fatalf("result.Idempotent = false, want true (already routed to same target)")
+	}
+	if len(runner.calls) != 0 {
+		t.Fatalf("runner calls = %#v, want none (no double-dispatch)", runner.calls)
 	}
 }
 

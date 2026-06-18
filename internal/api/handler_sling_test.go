@@ -182,15 +182,22 @@ func TestSlingWithLookupFailureReturnsInternalServerError(t *testing.T) {
 	}
 }
 
-func TestSlingWithForceBypassesMissingBeadGuard(t *testing.T) {
+func TestSlingWithForceRejectsMissingSameRigBead(t *testing.T) {
+	// gc-dv3psyz: --force must NOT dispatch a same-rig bead that does not
+	// resolve. The worker's rig owns the "gc" prefix, so gc-zzzzz is a same-rig
+	// phantom and must be rejected (400 missing_bead) rather than spawning a
+	// worker on an empty branch.
 	h, state := newSlingTestServer(t)
 
 	body := `{"target":"myrig/worker","bead":"gc-zzzzz","force":true}`
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, newPostRequest(cityURL(state, "/sling"), strings.NewReader(body)))
 
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d, want 200; body = %s", rec.Code, rec.Body.String())
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400 (phantom rejected under force); body = %s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "gc-zzzzz") {
+		t.Fatalf("body = %s, want missing-bead diagnostic for gc-zzzzz", rec.Body.String())
 	}
 }
 

@@ -128,7 +128,7 @@ Examples:
 	}
 	cmd.Flags().BoolVarP(&formula, "formula", "f", false, "treat argument as formula name")
 	cmd.Flags().BoolVar(&nudge, "nudge", false, "nudge target after routing")
-	cmd.Flags().BoolVar(&force, "force", false, "suppress warnings, allow cross-rig routing, allow graph workflow replacement, and for direct bead routes dispatch even if the bead does not resolve in the local store")
+	cmd.Flags().BoolVar(&force, "force", false, "suppress warnings, allow cross-rig routing, allow graph workflow replacement, and dispatch a cross-rig bead not yet visible in the local store (a same-rig bead that does not resolve is still rejected)")
 	cmd.Flags().StringVarP(&title, "title", "t", "", "wisp root bead title (with --formula or --on)")
 	cmd.Flags().StringArrayVar(&vars, "var", nil, "variable substitution for formula (key=value, repeatable)")
 	cmd.Flags().StringVar(&merge, "merge", "", "merge strategy: direct, mr, or local")
@@ -340,6 +340,11 @@ func cmdSlingWithJSON(args []string, isFormula, doNudge, force bool, title strin
 			}
 			fmt.Fprintf(humanStdout, "Created %s — %q\n", created.ID, beadOrFormula) //nolint:errcheck // best-effort stdout
 			beadOrFormula = created.ID
+			// The bead was just created here, so its existence is guaranteed by
+			// the successful Create; mark this as an inline-text sling so the
+			// domain does not re-validate it against a possibly-lagging querier
+			// and read a just-created bead as a phantom (gc-dv3psyz).
+			inlineText = true
 		}
 	}
 
@@ -989,14 +994,18 @@ func slingJSONWarnings(result sling.SlingResult) []string {
 func printMissingBeadError(stderr io.Writer, err *sling.MissingBeadError, allowForce bool) {
 	fmt.Fprintln(stderr, err) //nolint:errcheck
 	if allowForce {
-		fmt.Fprintln(stderr, "  verify the bead ID, or use --force if it exists in a remote view not yet synced locally") //nolint:errcheck
+		fmt.Fprintln(stderr, "  verify the bead ID, or use --force if it lives in another rig's store not yet synced locally") //nolint:errcheck
 		return
 	}
-	fmt.Fprintln(stderr, "  verify the bead ID; --force does not bypass missing source validation for formula-backed routes") //nolint:errcheck
+	fmt.Fprintln(stderr, "  verify the bead ID; --force does not bypass missing source validation for a bead in its own rig's store") //nolint:errcheck
 }
 
 func missingBeadForceApplies(opts sling.SlingOpts) bool {
-	return !opts.IsFormula && opts.OnFormula == "" && (opts.NoFormula || opts.Target.EffectiveDefaultSlingFormula() == "")
+	// --force can only rescue a missing bead that may live in another rig's
+	// store not yet synced locally; it no longer dispatches a same-rig bead
+	// that does not resolve (gc-dv3psyz). So only suggest --force when it has
+	// not already been supplied and the route is a plain bead reference.
+	return !opts.Force && !opts.IsFormula && opts.OnFormula == "" && (opts.NoFormula || opts.Target.EffectiveDefaultSlingFormula() == "")
 }
 
 func sourceWorkflowCleanupCommand(sourceBeadID, storeRef string) string {
