@@ -93,12 +93,44 @@ func preflight(opts SlingOpts, deps SlingDeps, querier BeadQuerier) (SlingResult
 
 	if shouldValidateExistingBead(opts) {
 		if err := validateExistingBead(opts.BeadOrFormula, deps); err != nil {
-			return result, err
+			var missing *MissingBeadError
+			// A cross-rig bead lives in another rig's store that the local
+			// validation querier cannot see; --force intentionally allows such
+			// remote dispatch (the bead may exist in a not-yet-synced view).
+			// Only downgrade a "missing bead" to a warning for that case: a
+			// same-rig --force route still rejects a phantom/malformed ID
+			// (e.g. a child bead whose dot was dropped), since the local store
+			// IS authoritative for it. See gc-dv3psyz.
+			if opts.Force && errors.As(err, &missing) &&
+				CrossRigRouteError(opts.BeadOrFormula, a, deps.Cfg) != nil {
+				result.BeadWarnings = append(result.BeadWarnings,
+					fmt.Sprintf("forced cross-rig dispatch: bead %s is not visible in the local store; routing anyway", opts.BeadOrFormula))
+			} else {
+				return result, err
+			}
 		}
 	}
 	if shouldGuardCrossRig(opts) {
 		if err := CrossRigRouteError(opts.BeadOrFormula, a, deps.Cfg); err != nil {
 			return result, err
+		}
+	}
+
+	// Force-safe dispatch guard: a plain --force bead route bypasses the normal
+	// idempotency check below, so re-check the cases --force must NEVER bypass —
+	// a resolved (closed) bead, or one already queued for this exact target and
+	// awaiting pickup. Without this, a stale dispatch snapshot re-dispatches
+	// finished or already-queued work into a second worker (gc-dv3psyz).
+	// Non-force routes are already covered by CheckBeadState below; formula and
+	// inline routes have their own (re-)attachment semantics.
+	if opts.Force && isPlainBeadRoute(opts) {
+		if reason, skip := dispatchSkipReason(querier, opts.BeadOrFormula, a.QualifiedName()); skip {
+			result.BeadWarnings = append(result.BeadWarnings, reason)
+			result.Idempotent = true
+			result.DryRun = opts.DryRun
+			result.BeadID = opts.BeadOrFormula
+			result.Method = "bead"
+			return result, nil
 		}
 	}
 
@@ -146,22 +178,75 @@ func preflight(opts SlingOpts, deps SlingDeps, querier BeadQuerier) (SlingResult
 }
 
 func shouldValidateExistingBead(opts SlingOpts) bool {
-	if opts.IsFormula || (opts.DryRun && opts.InlineText) {
+	// Skip when there is no pre-existing bead to validate: formula launches
+	// create their own root bead, and inline-text slings create a fresh bead
+	// as part of the sling (it may not be visible to the validation querier
+	// yet, so it must not be read as "missing").
+	if opts.IsFormula || opts.InlineText {
 		return false
 	}
-	return !opts.Force || usesFormulaBackedRoute(opts)
-}
-
-func usesFormulaBackedRoute(opts SlingOpts) bool {
-	return opts.OnFormula != "" || (!opts.NoFormula && opts.Target.EffectiveDefaultSlingFormula() != "")
+	// For a real bead-ID reference, existence is a correctness precondition,
+	// not a policy gate. --force overrides policy (suspended agent, empty pool,
+	// cross-rig, already-routed idempotency) but must NOT manufacture work for
+	// a bead that does not resolve: routing a phantom/malformed ID — e.g. a
+	// child bead ID whose dot was dropped (bo-x.11 -> bo-x11) — just burns a
+	// worker session on a branch with no work. A bead that genuinely exists
+	// only in a not-yet-synced cross-rig view is still allowed under --force
+	// (handled in preflight); it is dispatched once it syncs locally, which is
+	// strictly better than a same-rig phantom dispatch. See gc-dv3psyz.
+	return true
 }
 
 func shouldGuardCrossRig(opts SlingOpts) bool {
 	return !opts.IsFormula && !opts.Force && !opts.DryRun
 }
 
+// isPlainBeadRoute reports whether this sling routes an existing bead directly,
+// with no formula backing and no inline-text creation. Such routes are the ones
+// the control-dispatcher uses to put a pool worker on a ready bead, so they get
+// the force-safe double-dispatch guard (dispatchSkipReason).
+func isPlainBeadRoute(opts SlingOpts) bool {
+	return !opts.IsFormula && !opts.InlineText && opts.OnFormula == "" &&
+		(opts.NoFormula || opts.Target.EffectiveDefaultSlingFormula() == "")
+}
+
 func shouldCheckBeadState(opts SlingOpts) bool {
+	// --force intentionally bypasses the assignee-based idempotency check so an
+	// operator can re-sling stuck/claimed work. The narrower correctness guards
+	// that --force must NOT bypass (resolved or already-queued-for-this-target)
+	// live in dispatchSkipReason, called from preflight. See gc-dv3psyz.
 	return !opts.IsFormula && !opts.Force && (!opts.DryRun || !opts.InlineText)
+}
+
+// dispatchSkipReason reports why a bead must not be (re-)dispatched even under
+// --force. Unlike the assignee-based idempotency/warnings that --force is
+// designed to override, these are stale-snapshot / double-dispatch correctness
+// guards (gc-dv3psyz):
+//   - a resolved (closed) bead has no remaining work; re-dispatch just burns a
+//     worker session;
+//   - a bead already routed to this exact target and not yet claimed is already
+//     queued for it, so a second dispatch from a stale snapshot would put two
+//     workers on the same bead.
+//
+// It returns ("", false) when the bead cannot be read (e.g. a cross-rig bead
+// not visible to the local querier), leaving the --force escape hatch intact.
+func dispatchSkipReason(querier BeadQuerier, beadID, target string) (reason string, skip bool) {
+	if querier == nil {
+		return "", false
+	}
+	b, err := querier.Get(beadID)
+	if err != nil {
+		return "", false
+	}
+	if strings.EqualFold(strings.TrimSpace(b.Status), "closed") {
+		return fmt.Sprintf("bead %s is already resolved (closed); skipping re-dispatch", beadID), true
+	}
+	if t := strings.TrimSpace(target); t != "" &&
+		strings.TrimSpace(b.Metadata["gc.routed_to"]) == t &&
+		strings.TrimSpace(b.Assignee) == "" {
+		return fmt.Sprintf("bead %s is already routed to %s and awaiting pickup; skipping duplicate dispatch", beadID, t), true
+	}
+	return "", false
 }
 
 func validateExistingBead(beadID string, deps SlingDeps) error {

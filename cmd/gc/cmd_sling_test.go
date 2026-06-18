@@ -2187,14 +2187,16 @@ func writeTestFileStoreBeads(t *testing.T, scopeRoot string, stored []beads.Bead
 	}
 }
 
-func TestCmdSlingForceBypassesMissingBeadCheck(t *testing.T) {
-	// --force must bypass the bead-existence check. The call may still
-	// fail further downstream (we don't assert a success exit here), but
-	// stderr must not contain the "not found" guard message.
+func TestCmdSlingForceDoesNotBypassMissingSameRigBead(t *testing.T) {
+	// gc-dv3psyz: --force must NOT bypass the bead-existence check for a
+	// same-rig bead-ID reference. A phantom/malformed ID (e.g. a dot-stripped
+	// child bead ID) that resolves to nothing must be rejected, not dispatched
+	// onto an empty branch. (Cross-rig --force still allows remote dispatch,
+	// and inline-text slings still create + route a fresh bead.)
 	setupCmdSlingBeadExistsFixture(t)
 
 	var stdout, stderr bytes.Buffer
-	_ = cmdSling(
+	code := cmdSling(
 		[]string{"frontend/worker", "FE-ghost1"},
 		false, false, true, // force=true
 		"", nil, "",
@@ -2203,13 +2205,16 @@ func TestCmdSlingForceBypassesMissingBeadCheck(t *testing.T) {
 		"", "",
 		&stdout, &stderr,
 	)
+	if code == 0 {
+		t.Fatalf("cmdSling returned 0, want non-zero (phantom rejected under --force); stderr: %s", stderr.String())
+	}
 	got := stderr.String()
-	if strings.Contains(got, "not found in store") {
-		t.Errorf("--force did not bypass bead-existence check; stderr: %s", got)
+	if !strings.Contains(got, "FE-ghost1") || !strings.Contains(got, "not found") {
+		t.Errorf("--force should still reject a missing same-rig bead; stderr: %s", got)
 	}
 }
 
-func TestCmdSlingForceMissingBeadPrintsAutoConvoyWarning(t *testing.T) {
+func TestCmdSlingForceMissingBeadRejectedWithCustomQuery(t *testing.T) {
 	configureIsolatedRuntimeEnv(t)
 	t.Setenv("GC_BEADS", "file")
 
@@ -2254,11 +2259,14 @@ sling_query = "true"
 		"", "",
 		&stdout, &stderr,
 	)
-	if code != 0 {
-		t.Fatalf("cmdSling returned %d, want 0; stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+	// gc-dv3psyz: a same-rig bead-ID reference that resolves to nothing must be
+	// rejected even under --force, even for a custom sling_query agent — no
+	// phantom dispatch onto an empty branch.
+	if code == 0 {
+		t.Fatalf("cmdSling returned 0, want non-zero (phantom rejected under --force); stdout=%s stderr=%s", stdout.String(), stderr.String())
 	}
-	if !strings.Contains(stderr.String(), "forced dispatch skipped missing-bead validation") {
-		t.Fatalf("stderr = %q, want forced missing-bead auto-convoy warning", stderr.String())
+	if !strings.Contains(stderr.String(), "FE-ghost1") || !strings.Contains(stderr.String(), "not found") {
+		t.Fatalf("stderr = %q, want missing-bead rejection diagnostic", stderr.String())
 	}
 }
 
